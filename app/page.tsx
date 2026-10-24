@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import Image from 'next/image';
+
 import { useRouter } from 'next/navigation';
 
 // ─── Hand-drawn Doodle SVGs matching reference image exactly ───────────────
@@ -403,40 +403,9 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* ── THREE COLUMN STAGE ── */}
-        <div className="flex items-end justify-center w-full gap-2 sm:gap-4 lg:gap-6">
-
-          {/* ─── LEFT CHARACTER (Anime boy + popcorn + laptop + doodles) ─── */}
-          <div className="hidden md:flex flex-col items-center relative flex-shrink-0 self-end w-[220px] lg:w-[280px] xl:w-[320px]">
-            {/* Doodle Crown above head */}
-            <div className="absolute -top-7 left-[38%] -translate-x-1/2 z-20" style={{ transform: 'rotate(-12deg)' }}>
-              <DoodleCrown />
-            </div>
-
-            {/* Sparkles around head */}
-            <div className="absolute top-2 left-4 z-20">
-              <YellowRays />
-            </div>
-            <div className="absolute top-4 right-8 z-20">
-              <RedRaysSmall />
-            </div>
-
-            {/* Character Image */}
-            <div className="w-full relative">
-              <Image
-                src="/char-left.jpg"
-                alt="Boy watching YouTube party"
-                width={320}
-                height={400}
-                className="w-full h-auto object-contain object-bottom select-none pointer-events-none"
-                style={{ mixBlendMode: 'multiply' }}
-                priority
-              />
-            </div>
-          </div>
-
-          {/* ─── CENTER: TWO CARDS ─── */}
-          <div className="flex flex-col sm:flex-row gap-4 lg:gap-6 items-stretch justify-center flex-1 max-w-[680px] z-10 mb-4 sm:mb-6">
+        {/* ── CENTRAL TWO CARDS ── */}
+        <div className="flex items-end justify-center w-full">
+          <div className="flex flex-col sm:flex-row gap-4 lg:gap-6 items-stretch justify-center w-full max-w-[680px] z-10 mb-4 sm:mb-6">
 
             {/* CARD 1: CREATE A ROOM */}
             <div
@@ -534,46 +503,6 @@ export default function LandingPage() {
             </div>
 
           </div>
-
-          {/* ─── RIGHT CHARACTER (Ghost with popcorn) + MOVIE NIGHTS LIST ─── */}
-          <div className="hidden md:flex flex-col items-center relative flex-shrink-0 self-end w-[220px] lg:w-[280px] xl:w-[320px]">
-            {/* Annotation List on top-right of ghost */}
-            <div
-              className="absolute -top-12 sm:-top-8 -left-4 sm:-left-2 z-20 flex items-start gap-1 select-none pointer-events-none"
-              style={{ transform: 'rotate(4deg)' }}
-            >
-              <div className="mt-1">
-                <MovieNightDashes />
-              </div>
-              <div className="flex flex-col">
-                {['MOVIE NIGHTS', 'REACTIONS', 'STUDY TOGETHER', 'ANYTHING'].map((item) => (
-                  <span
-                    key={item}
-                    className="font-mouse text-[#1A1614] text-xs sm:text-sm lg:text-base leading-[1.15] font-black uppercase tracking-wide"
-                  >
-                    {item}
-                  </span>
-                ))}
-                <div className="ml-auto mt-0.5">
-                  <CurlyArrowBesideGhost />
-                </div>
-              </div>
-            </div>
-
-            {/* Character Image */}
-            <div className="w-full relative">
-              <Image
-                src="/char-right.jpg"
-                alt="Ghost buddy eating popcorn"
-                width={320}
-                height={400}
-                className="w-full h-auto object-cover object-top rounded-3xl select-none pointer-events-none"
-                style={{ maxHeight: '310px' }}
-                priority
-              />
-            </div>
-          </div>
-
         </div>
       </div>
 
