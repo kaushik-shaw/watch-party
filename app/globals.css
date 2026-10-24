@@ -1,26 +1,72 @@
+@import url('https://fonts.googleapis.com/css2?family=Anton+SC&family=Gasoek+One&family=Modak&family=Mouse+Memoirs&family=Outfit:wght@100..900&family=Ranchers&display=swap');
 @import "tailwindcss";
 
+@theme {
+  --font-anton: 'Anton SC', sans-serif;
+  --font-gasoek: 'Gasoek One', sans-serif;
+  --font-modak: 'Modak', cursive;
+  --font-mouse: 'Mouse Memoirs', sans-serif;
+  --font-outfit: 'Outfit', sans-serif;
+  --font-ranchers: 'Ranchers', cursive;
+}
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --font-anton: 'Anton SC', sans-serif;
+  --font-gasoek: 'Gasoek One', sans-serif;
+  --font-modak: 'Modak', cursive;
+  --font-mouse: 'Mouse Memoirs', sans-serif;
+  --font-outfit: 'Outfit', sans-serif;
+  --font-ranchers: 'Ranchers', cursive;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.font-ranchers {
+  font-family: 'Ranchers', cursive !important;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+.font-anton {
+  font-family: 'Anton SC', sans-serif !important;
+}
+
+.font-gasoek {
+  font-family: 'Gasoek One', sans-serif !important;
+}
+
+.font-modak {
+  font-family: 'Modak', cursive !important;
+}
+
+.font-mouse {
+  font-family: 'Mouse Memoirs', cursive, sans-serif !important;
+}
+
+.font-outfit {
+  font-family: 'Outfit', sans-serif;
+}
+
+/* Custom comic style text shadows and strokes */
+.comic-title-red {
+  font-family: 'Mouse Memoirs', cursive, sans-serif;
+  color: #EA2825;
+  -webkit-text-stroke: 4px #FFFFFF;
+  paint-order: stroke fill;
+  filter: drop-shadow(0 4px 0 #18181B);
+}
+
+.comic-title-yellow {
+  font-family: 'Mouse Memoirs', cursive, sans-serif;
+  color: #FAB318;
+  -webkit-text-stroke: 3.5px #FFFFFF;
+  paint-order: stroke fill;
+  filter: drop-shadow(0 3px 0 #18181B);
+}
+
+.comic-border {
+  border: 2.5px solid #1E1B18;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #F8EFE4;
+  color: #1E1B18;
+  font-family: 'Outfit', sans-serif;
+  overflow-x: hidden;
 }
