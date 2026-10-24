@@ -1,26 +1,11 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 import { useRouter } from 'next/navigation';
 
 // ─── Hand-drawn Doodle SVGs matching reference image exactly ───────────────
 
-const TopRaysLeft = () => (
-  <svg width="42" height="30" viewBox="0 0 42 30" fill="none" className="select-none pointer-events-none">
-    <path d="M4 26 L12 6" stroke="#E62719" strokeWidth="3.5" strokeLinecap="round" />
-    <path d="M22 28 L20 2" stroke="#E62719" strokeWidth="3.8" strokeLinecap="round" />
-    <path d="M38 28 L30 10" stroke="#E62719" strokeWidth="3.5" strokeLinecap="round" />
-  </svg>
-);
-
-const TopRaysRight = () => (
-  <svg width="42" height="30" viewBox="0 0 42 30" fill="none" className="select-none pointer-events-none">
-    <path d="M6 10 L14 28" stroke="#E62719" strokeWidth="3.5" strokeLinecap="round" />
-    <path d="M22 2 L20 28" stroke="#E62719" strokeWidth="3.8" strokeLinecap="round" />
-    <path d="M38 6 L30 26" stroke="#E62719" strokeWidth="3.5" strokeLinecap="round" />
-  </svg>
-);
 
 const DoodleCrown = () => (
   <svg width="48" height="36" viewBox="0 0 54 40" fill="none" className="select-none pointer-events-none">
@@ -53,17 +38,34 @@ const RedRaysSmall = () => (
 );
 
 const DoodleArrowLeft = () => (
-  <svg width="65" height="50" viewBox="0 0 65 50" fill="none" className="select-none pointer-events-none">
+  <svg width="72" height="56" viewBox="0 0 72 56" fill="none" className="select-none pointer-events-none" style={{ overflow: 'visible' }}>
+    {/* Thick white border underneath */}
     <path
-      d="M10 8 C 16 32, 34 40, 52 38"
+      d="M14 10 C 20 34, 38 42, 56 40"
+      stroke="white"
+      strokeWidth="11"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M48 30 L58 40 L46 47"
+      stroke="white"
+      strokeWidth="11"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+
+    {/* Thick red arrow on top */}
+    <path
+      d="M14 10 C 20 34, 38 42, 56 40"
       stroke="#E62719"
-      strokeWidth="3.2"
+      strokeWidth="5"
       strokeLinecap="round"
     />
     <path
-      d="M44 28 L54 38 L42 45"
+      d="M48 30 L58 40 L46 47"
       stroke="#E62719"
-      strokeWidth="3.2"
+      strokeWidth="5"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
@@ -71,17 +73,34 @@ const DoodleArrowLeft = () => (
 );
 
 const DoodleArrowRight = () => (
-  <svg width="65" height="50" viewBox="0 0 65 50" fill="none" className="select-none pointer-events-none">
+  <svg width="72" height="56" viewBox="0 0 72 56" fill="none" className="select-none pointer-events-none" style={{ overflow: 'visible' }}>
+    {/* Thick white border underneath */}
     <path
-      d="M55 8 C 48 32, 30 40, 12 38"
+      d="M58 10 C 52 34, 34 42, 16 40"
+      stroke="white"
+      strokeWidth="11"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+    <path
+      d="M26 30 L16 40 L28 47"
+      stroke="white"
+      strokeWidth="11"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    />
+
+    {/* Thick red arrow on top */}
+    <path
+      d="M58 10 C 52 34, 34 42, 16 40"
       stroke="#E62719"
-      strokeWidth="3.2"
+      strokeWidth="5"
       strokeLinecap="round"
     />
     <path
-      d="M22 28 L11 38 L24 45"
+      d="M26 30 L16 40 L28 47"
       stroke="#E62719"
-      strokeWidth="3.2"
+      strokeWidth="5"
       strokeLinecap="round"
       strokeLinejoin="round"
     />
@@ -108,49 +127,25 @@ const ScribbleUnderline = () => (
   </svg>
 );
 
-const CreateRoomSlashesLeft = () => (
-  <svg width="24" height="20" viewBox="0 0 24 20" fill="none" className="select-none pointer-events-none">
-    <path d="M4 16 L12 4" stroke="#E62719" strokeWidth="2.8" strokeLinecap="round" />
-    <path d="M12 18 L20 6" stroke="#E62719" strokeWidth="2.8" strokeLinecap="round" />
-  </svg>
-);
-
-const CreateRoomSlashesRight = () => (
-  <svg width="24" height="20" viewBox="0 0 24 20" fill="none" className="select-none pointer-events-none">
-    <path d="M12 4 L4 16" stroke="#E62719" strokeWidth="2.8" strokeLinecap="round" />
-    <path d="M20 6 L12 18" stroke="#E62719" strokeWidth="2.8" strokeLinecap="round" />
-  </svg>
-);
-
-const JoinRoomDashesLeft = () => (
-  <svg width="26" height="22" viewBox="0 0 26 22" fill="none" className="select-none pointer-events-none">
-    <path d="M4 5 L18 8" stroke="#E62719" strokeWidth="2.6" strokeLinecap="round" />
-    <path d="M2 11 L22 11" stroke="#E62719" strokeWidth="2.8" strokeLinecap="round" />
-    <path d="M5 17 L19 14" stroke="#E62719" strokeWidth="2.6" strokeLinecap="round" />
-  </svg>
-);
-
-const JoinRoomDashesRight = () => (
-  <svg width="26" height="22" viewBox="0 0 26 22" fill="none" className="select-none pointer-events-none">
-    <path d="M22 5 L8 8" stroke="#E62719" strokeWidth="2.6" strokeLinecap="round" />
-    <path d="M24 11 L4 11" stroke="#E62719" strokeWidth="2.8" strokeLinecap="round" />
-    <path d="M21 17 L7 14" stroke="#E62719" strokeWidth="2.6" strokeLinecap="round" />
-  </svg>
-);
-
 const HostDashesLeft = () => (
-  <svg width="26" height="24" viewBox="0 0 26 24" fill="none" className="select-none pointer-events-none">
-    <path d="M20 5 L6 10" stroke="#E62719" strokeWidth="2.8" strokeLinecap="round" />
-    <path d="M22 12 L4 12" stroke="#E62719" strokeWidth="3" strokeLinecap="round" />
-    <path d="M19 19 L7 14" stroke="#E62719" strokeWidth="2.8" strokeLinecap="round" />
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="select-none pointer-events-none">
+    {/* Top radiating dash (pointing up-left: \) */}
+    <path d="M5 6 L17 10.5" stroke="#E62719" strokeWidth="3.6" strokeLinecap="round" />
+    {/* Middle radiating dash (pointing left: -) */}
+    <path d="M2 12 L15 12" stroke="#E62719" strokeWidth="3.8" strokeLinecap="round" />
+    {/* Bottom radiating dash (pointing down-left: /) */}
+    <path d="M5 18 L17 13.5" stroke="#E62719" strokeWidth="3.6" strokeLinecap="round" />
   </svg>
 );
 
 const HostDashesRight = () => (
-  <svg width="26" height="24" viewBox="0 0 26 24" fill="none" className="select-none pointer-events-none">
-    <path d="M6 5 L20 10" stroke="#E62719" strokeWidth="2.8" strokeLinecap="round" />
-    <path d="M4 12 L22 12" stroke="#E62719" strokeWidth="3" strokeLinecap="round" />
-    <path d="M7 19 L19 14" stroke="#E62719" strokeWidth="2.8" strokeLinecap="round" />
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" className="select-none pointer-events-none">
+    {/* Top radiating dash (pointing up-right: /) */}
+    <path d="M7 10.5 L19 6" stroke="#E62719" strokeWidth="3.6" strokeLinecap="round" />
+    {/* Middle radiating dash (pointing right: -) */}
+    <path d="M9 12 L22 12" stroke="#E62719" strokeWidth="3.8" strokeLinecap="round" />
+    {/* Bottom radiating dash (pointing down-right: \) */}
+    <path d="M7 13.5 L19 18" stroke="#E62719" strokeWidth="3.6" strokeLinecap="round" />
   </svg>
 );
 
@@ -188,7 +183,126 @@ export default function LandingPage() {
   const [joinName, setJoinName] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [toast, setToast] = useState<string | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [navReady, setNavReady] = useState(false);
+  const [headlineReady, setHeadlineReady] = useState(false);
+  const [contentReady, setContentReady] = useState(false);
+
+  // Loading & error states
+  const [isCreating, setIsCreating] = useState(false);
+  const [isJoining, setIsJoining] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [joinNameError, setJoinNameError] = useState<string | null>(null);
+  const [joinCodeError, setJoinCodeError] = useState<string | null>(null);
+
+  // Refs
+  const watchYoutubeRef = useRef<SVGTextPathElement>(null);
+  const togetherRef = useRef<SVGTextPathElement>(null);
+  const headlineContainerRef = useRef<HTMLDivElement>(null);
+  const nameInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    // Pre-seed demo rooms in localStorage for immediate testing
+    try {
+      const existing = localStorage.getItem('wp_rooms');
+      if (!existing) {
+        localStorage.setItem(
+          'wp_rooms',
+          JSON.stringify({
+            PARTY1: { host: 'Alex', createdAt: Date.now() },
+            WATCH1: { host: 'Sam', createdAt: Date.now() },
+          })
+        );
+      }
+    } catch {
+      // ignore
+    }
+
+    // 1. Fade out the loader
+    const loaderTimer = setTimeout(() => setIsLoading(false), 600);
+    // 2. Nav drops FIRST
+    const navTimer = setTimeout(() => setNavReady(true), 700);
+    // 3. Headline sweeps along the arc after nav lands
+    const headlineTimer = setTimeout(() => setHeadlineReady(true), 1200);
+    // 4. Content below fades up after headline settles
+    const contentTimer = setTimeout(() => setContentReady(true), 2300);
+
+    return () => {
+      clearTimeout(loaderTimer);
+      clearTimeout(navTimer);
+      clearTimeout(headlineTimer);
+      clearTimeout(contentTimer);
+    };
+  }, []);
+
+  // Modal behavior: Esc key to close and autofocus input
+  useEffect(() => {
+    if (!isCreateModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setIsCreateModalOpen(false);
+        setCreateError(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    const timer = setTimeout(() => {
+      nameInputRef.current?.focus();
+    }, 50);
+
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      clearTimeout(timer);
+    };
+  }, [isCreateModalOpen]);
+
+  // Animate textPath startOffset: text slides along the SVG arc
+  // Spring-decay easing for smooth overshoot + settle
+  const springEase = useCallback((t: number): number => {
+    const decay = Math.exp(-6 * t);
+    const oscillation = Math.sin(t * Math.PI * 1.8);
+    return 1 - decay * (1 - oscillation * 0.35);
+  }, []);
+
+  useEffect(() => {
+    if (!headlineReady) return;
+
+    const duration = 1000; // ms
+    const startTime = performance.now();
+
+    // Start offset values: from far left (-60%) to center (50%)
+    const fromOffset = -60;
+    const toOffset = 50;
+    const range = toOffset - fromOffset; // 110
+
+    // Show the container
+    if (headlineContainerRef.current) {
+      headlineContainerRef.current.style.opacity = '1';
+    }
+
+    let rafId: number;
+    const animate = (now: number) => {
+      const elapsed = now - startTime;
+      const rawProgress = Math.min(elapsed / duration, 1);
+      const easedProgress = springEase(rawProgress);
+      const offset = fromOffset + range * easedProgress;
+
+      const offsetStr = `${offset}%`;
+      if (watchYoutubeRef.current) {
+        watchYoutubeRef.current.setAttribute('startOffset', offsetStr);
+      }
+      if (togetherRef.current) {
+        togetherRef.current.setAttribute('startOffset', offsetStr);
+      }
+
+      if (rawProgress < 1) {
+        rafId = requestAnimationFrame(animate);
+      }
+    };
+
+    rafId = requestAnimationFrame(animate);
+    return () => cancelAnimationFrame(rafId);
+  }, [headlineReady, springEase]);
 
   const showToast = (msg: string) => {
     setToast(msg);
@@ -198,53 +312,149 @@ export default function LandingPage() {
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!createName.trim()) {
-      showToast('⚠️ Please enter your name first');
+      setCreateError('Please enter your name');
       return;
     }
+    setCreateError(null);
+    setIsCreating(true);
+
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+
+    try {
+      const rooms = JSON.parse(localStorage.getItem('wp_rooms') || '{}');
+      rooms[code] = { host: createName.trim(), createdAt: Date.now() };
+      localStorage.setItem('wp_rooms', JSON.stringify(rooms));
+    } catch {
+      // ignore
+    }
+
     showToast(`🎉 Creating room ${code}...`);
     setTimeout(() => {
+      setIsCreating(false);
+      setIsCreateModalOpen(false);
       router.push(`/room/${code}?username=${encodeURIComponent(createName.trim())}`);
     }, 600);
   };
 
   const handleJoin = (e: React.FormEvent) => {
     e.preventDefault();
+    let hasError = false;
+
     if (!joinName.trim()) {
-      showToast('⚠️ Please enter your name');
-      return;
+      setJoinNameError('Please enter your name');
+      hasError = true;
     }
     if (!joinCode.trim()) {
-      showToast('⚠️ Please enter a room code');
-      return;
+      setJoinCodeError('Please enter a room code');
+      hasError = true;
+    } else if (joinCode.trim().length < 6) {
+      setJoinCodeError('Room code must be 6 characters');
+      hasError = true;
     }
+
+    if (hasError) return;
+
+    setJoinNameError(null);
+    setJoinCodeError(null);
+    setIsJoining(true);
+
     const code = joinCode.trim().toUpperCase();
-    showToast(`🍿 Joining room ${code}...`);
+
     setTimeout(() => {
-      router.push(`/room/${code}?username=${encodeURIComponent(joinName.trim())}`);
+      let roomFound = false;
+      try {
+        const rooms = JSON.parse(localStorage.getItem('wp_rooms') || '{}');
+        if (rooms[code] || ['PARTY1', 'WATCH1', 'DEMO01'].includes(code)) {
+          roomFound = true;
+        }
+      } catch {
+        // fallback
+      }
+
+      if (!roomFound) {
+        setIsJoining(false);
+        setJoinCodeError('Room not found. Check code or create a room.');
+        return;
+      }
+
+      showToast(`🍿 Joining room ${code}...`);
+      setTimeout(() => {
+        setIsJoining(false);
+        router.push(`/room/${code}?username=${encodeURIComponent(joinName.trim())}`);
+      }, 500);
     }, 600);
   };
 
   return (
     <div
-      className="relative w-full min-h-screen xl:h-screen flex flex-col justify-between overflow-x-hidden selection:bg-red-500 selection:text-white"
-      style={{ backgroundColor: '#F7EFE5' }}
+      className="relative w-full h-screen max-h-screen flex flex-col justify-between overflow-hidden selection:bg-red-500 selection:text-white"
+      style={{ backgroundColor: '#F4EBD9' }}
     >
+      {/* Page Loader */}
+      <div
+        className={`fixed inset-0 z-[999] flex flex-col items-center justify-center transition-opacity duration-300 ease-out select-none ${
+          isLoading ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+        }`}
+        style={{ backgroundColor: '#F4EBD9' }}
+      >
+        <div className="flex flex-col items-center gap-4">
+          <span
+            className="text-[#E62719] text-6xl sm:text-7xl tracking-normal animate-pulse select-none"
+            style={{
+              fontFamily: "'Modak', cursive",
+              WebkitTextStroke: '6px white',
+              paintOrder: 'stroke fill',
+            }}
+          >
+            WATCHPARTY
+          </span>
+          <div className="flex items-center gap-2.5">
+            <span className="w-3.5 h-3.5 rounded-full bg-[#E62719] animate-bounce [animation-delay:-0.3s]"></span>
+            <span className="w-3.5 h-3.5 rounded-full bg-[#E62719] animate-bounce [animation-delay:-0.15s]"></span>
+            <span className="w-3.5 h-3.5 rounded-full bg-[#E62719] animate-bounce"></span>
+          </div>
+        </div>
+      </div>
+
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] px-6 py-2.5 bg-[#1A1614] text-[#F7EFE5] text-sm font-semibold rounded-full shadow-2xl animate-fade-in pointer-events-none">
+        <div className="fixed top-5 left-1/2 -translate-x-1/2 z-[100] px-6 py-2.5 bg-[#1A1614] text-[#F4EBD9] text-sm font-semibold rounded-full shadow-2xl animate-fade-in pointer-events-none">
           {toast}
         </div>
       )}
 
+      {/* Bottom-left Character Illustration - visible on 2xl (1536px+) to prevent collisions on laptops & phones */}
+      <div className={`hidden 2xl:block absolute bottom-0 left-0 z-10 pointer-events-none select-none ${
+        contentReady ? 'animate-pop-left' : 'opacity-0'
+      }`}>
+        <img
+          src="/pic1.webp"
+          alt="Watching party illustration"
+          className="w-[500px] 2xl:w-[580px] h-auto object-contain -ml-12 -mb-15 rotate-[-2deg] origin-bottom-left"
+        />
+      </div>
+
+      {/* Bottom-right Character Illustration - visible on 2xl (1536px+) to prevent collisions on laptops & phones */}
+      <div className={`hidden 2xl:block absolute bottom-0 -right-8 z-10 pointer-events-none select-none ${
+        contentReady ? 'animate-pop-right' : 'opacity-0'
+      }`}>
+        <img
+          src="/pic2.webp"
+          alt="Watching party ghost illustration"
+          className="w-[500px] 2xl:w-[580px] h-auto object-contain -mr-12 -mb-15 rotate-[2deg] origin-bottom-right"
+        />
+      </div>
+
       {/* ══════════════════════════════════════════════════════════════════════
           1. TOP NAVIGATION
           ══════════════════════════════════════════════════════════════════════ */}
-      <nav className="relative z-30 flex items-center justify-between px-6 sm:px-10 pt-5 pb-2 flex-shrink-0">
+      <nav className="relative z-30 flex items-center justify-between px-6 sm:px-10 pt-4 pb-1 flex-shrink-0">
         {/* LOGO: Modak font in red */}
         <button
           onClick={() => router.push('/')}
-          className="cursor-pointer hover:opacity-90 transition active:scale-95 text-left"
+          className={`cursor-pointer hover:opacity-90 active:scale-95 text-left ${
+            navReady ? 'animate-drop-bounce' : 'opacity-0 pointer-events-none'
+          }`}
         >
           <span
             className="text-[#E62719] text-5xl sm:text-6xl tracking-normal select-none"
@@ -258,22 +468,30 @@ export default function LandingPage() {
             WATCHPARTY
           </span>
         </button>
+
+        {/* Top-right "CREATE ROOM" button */}
+        <button
+          onClick={() => {
+            setIsCreateModalOpen(true);
+            setCreateError(null);
+          }}
+          className={`cursor-pointer bg-[#E62719] hover:bg-[#D41E11] text-white px-5 sm:px-6 py-2 sm:py-2.5 rounded-full font-modak text-base sm:text-lg tracking-wider border-[2.5px] border-[#18181B] shadow-[0_4px_0_#18181B] active:translate-y-[3px] active:shadow-[0_1px_0_#18181B] select-none flex items-center gap-1.5 sm:gap-2 ${
+            navReady ? 'animate-drop-bounce-delay' : 'opacity-0 pointer-events-none'
+          }`}
+        >
+          <span className="text-xl sm:text-2xl leading-none font-bold select-none">+</span>
+          <span>CREATE ROOM</span>
+        </button>
       </nav>
 
       {/* ══════════════════════════════════════════════════════════════════════
           2. GIANT HERO HEADLINE: "WATCH YOUTUBE" & "TOGETHER, IN SYNC."
           ══════════════════════════════════════════════════════════════════════ */}
-      <div className="relative z-10 flex flex-col items-center justify-center flex-shrink-0 px-4 pt-1 pb-2">
-        {/* Doodle rays above WATCH & YOUTUBE */}
-        <div className="w-full max-w-4xl relative select-none pointer-events-none">
-          <div className="absolute -top-3 left-[14%] sm:left-[17%]">
-            <TopRaysLeft />
-          </div>
-          <div className="absolute -top-3 right-[14%] sm:right-[17%]">
-            <TopRaysRight />
-          </div>
-        </div>
-
+      <div
+        ref={headlineContainerRef}
+        className="relative z-10 flex flex-col items-center justify-center flex-shrink-0 px-4 pt-1 pb-2"
+        style={{ opacity: 0 }}
+      >
         {/* "WATCH YOUTUBE" — SVG textPath arch for mathematically even curve */}
         <div className="w-full max-w-[1060px] mx-auto select-none px-2" aria-label="WATCH YOUTUBE" style={{ marginBottom: '-1.5rem' }}>
           <svg
@@ -282,13 +500,13 @@ export default function LandingPage() {
             style={{ overflow: 'visible' }}
           >
             <defs>
-              {/* Upward arch path calibrated for large Anton SC headline */}
               <path
                 id="watchYoutubePath"
                 d="M 30,240 A 2100,2100 0 0,1 1270,240"
                 fill="none"
               />
             </defs>
+
             <text
               style={{
                 fontFamily: "'Ranchers', cursive",
@@ -301,55 +519,68 @@ export default function LandingPage() {
               }}
             >
               <textPath
+                ref={watchYoutubeRef}
                 href="#watchYoutubePath"
-                startOffset="50%"
+                startOffset="-60%"
                 textAnchor="middle"
               >
                 WATCH YOUTUBE
               </textPath>
             </text>
+
+            {/* Accent lines on upper-left of "WATCH" */}
+            <g className="select-none pointer-events-none">
+              <line x1="45" y1="55" x2="22" y2="34" stroke="#E62719" strokeWidth="9.5" strokeLinecap="round" />
+              <line x1="38" y1="78" x2="10" y2="70" stroke="#E62719" strokeWidth="9.5" strokeLinecap="round" />
+            </g>
+
+            {/* Accent lines on upper-right of "YOUTUBE" */}
+            <g className="select-none pointer-events-none">
+              <line x1="1255" y1="55" x2="1278" y2="34" stroke="#E62719" strokeWidth="9.5" strokeLinecap="round" />
+              <line x1="1262" y1="78" x2="1290" y2="70" stroke="#E62719" strokeWidth="9.5" strokeLinecap="round" />
+            </g>
           </svg>
         </div>
 
-        {/* "TOGETHER, IN SYNC." - in MODAK font with a subtle arch curve, tucked right below WATCH YOUTUBE */}
-        <div className="relative -mt-4 sm:-mt-8 md:-mt-18 w-full max-w-[620px] mx-auto flex flex-col items-center select-none z-20">
+        {/* "TOGETHER, IN SYNC." */}
+        <div className="relative -mt-2 sm:-mt-1 md:-mt-2 lg:-mt-20 w-full max-w-[740px] mx-auto flex flex-col items-center select-none z-20">
           <svg
-            viewBox="0 0 800 120"
+            viewBox="0 0 1000 145"
             className="w-full h-auto"
             style={{ overflow: 'visible' }}
           >
             <defs>
-              {/* Very gentle upward arch to match the curve above */}
               <path
                 id="togetherInSyncPath"
-                d="M 30,100 A 2400,2400 0 0,1 770,100"
+                d="M 30,120 A 3000,3000 0 0,1 970,120"
                 fill="none"
               />
             </defs>
             <text
               style={{
                 fontFamily: "'Modak', cursive",
-                fontSize: '77px',
+                fontSize: '92px',
                 fill: '#FFBA00',
                 stroke: 'white',
-                strokeWidth: '10px',
+                strokeWidth: '15px',
                 paintOrder: 'stroke fill',
                 strokeLinejoin: 'round',
                 letterSpacing: '2px',
               }}
             >
               <textPath
+                ref={togetherRef}
                 href="#togetherInSyncPath"
-                startOffset="50%"
+                startOffset="-60%"
                 textAnchor="middle"
               >
-                TOGETHER, IN SYNC.
+                TOGETHER, IN SYNC
               </textPath>
             </text>
           </svg>
 
           {/* Hand-drawn red scribble underline */}
-          <div className="w-[85%] sm:w-[92%] -mt-3 sm:-mt-5">
+          <div className="w-[85%] sm:w-[92%] -mt-10 sm:-mt-11">
             <ScribbleUnderline />
           </div>
         </div>
@@ -357,111 +588,70 @@ export default function LandingPage() {
 
       {/* ══════════════════════════════════════════════════════════════════════
           3. MAIN INTERACTION STAGE
-             Left Character + Annotation | Two Central Cards | Right Character + List
           ══════════════════════════════════════════════════════════════════════ */}
-      <div className="relative flex items-end justify-center flex-1 w-full max-w-[1400px] mx-auto px-4 mt-2">
+      <div className={`relative flex items-center justify-center flex-1 w-full max-w-[1400px] mx-auto px-4 ${
+        contentReady ? 'animate-fade-rise' : 'opacity-0 pointer-events-none'
+      }`}>
 
-        {/* ── LEFT ANNOTATION: "DISTANCE FEELS CLOSER" ── */}
-        <div
-          className="absolute left-2 sm:left-6 lg:left-12 top-[8%] flex flex-col items-center select-none z-20 pointer-events-none"
-          style={{ transform: 'rotate(-10deg)' }}
-        >
-          <span
-            className="font-modak text-[#FFBA00] text-center uppercase leading-[1.05]"
-            style={{
-              fontSize: 'clamp(0.95rem, 1.8vw, 1.35rem)',
-              WebkitTextStroke: '2.5px white',
-              paintOrder: 'stroke fill',
-              textShadow: '0 2px 0 #BA8400, 0 3px 2px rgba(0,0,0,0.15)',
-            }}
+        {/* ── CENTRAL JOIN ROOM CARD WITH FLANKING ANNOTATIONS ── */}
+        <div className="relative flex items-center justify-center w-full">
+          <div
+            className="relative flex items-center justify-center w-full max-w-[360px] z-10"
+            style={{ transform: 'translateY(-14px)' }}
           >
-            DISTANCE<br />FEELS<br />CLOSER
-          </span>
-          <div className="mt-1 ml-4">
-            <DoodleArrowLeft />
-          </div>
-        </div>
 
-        {/* ── RIGHT ANNOTATION: "SAME VIDEO SAME VIBES" ── */}
-        <div
-          className="absolute right-2 sm:right-6 lg:right-12 top-[8%] flex flex-col items-center select-none z-20 pointer-events-none"
-          style={{ transform: 'rotate(10deg)' }}
-        >
-          <span
-            className="font-modak text-[#FFBA00] text-center uppercase leading-[1.05]"
-            style={{
-              fontSize: 'clamp(0.95rem, 1.8vw, 1.35rem)',
-              WebkitTextStroke: '2.5px white',
-              paintOrder: 'stroke fill',
-              textShadow: '0 2px 0 #BA8400, 0 3px 2px rgba(0,0,0,0.15)',
-            }}
-          >
-            SAME<br />VIDEO<br />SAME<br />VIBES
-          </span>
-          <div className="mt-1 mr-4">
-            <DoodleArrowRight />
-          </div>
-        </div>
-
-        {/* ── CENTRAL TWO CARDS ── */}
-        <div className="flex items-end justify-center w-full">
-          <div className="flex flex-col sm:flex-row gap-4 lg:gap-6 items-stretch justify-center w-full max-w-[680px] z-10 mb-4 sm:mb-6">
-
-            {/* CARD 1: CREATE A ROOM */}
+            {/* ── LEFT ANNOTATION: "DISTANCE FEELS CLOSER" (hidden on mobile/tablet to avoid overflow) ── */}
             <div
-              className="flex-1 bg-white rounded-[26px] border-[2.8px] border-[#1A1614] p-5 sm:p-6 flex flex-col justify-between shadow-[0_4px_16px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.09)] transition-all"
+              className="hidden lg:flex absolute -left-44 sm:-left-56 md:-left-68 lg:-left-76 top-[-10px] sm:top-[-20px] flex-col items-center select-none z-20 pointer-events-none"
+              style={{ transform: 'rotate(-12deg)' }}
             >
-              <div>
-                {/* Title flanked with red doodle slashes */}
-                <div className="flex items-center justify-center gap-2 mb-4">
-                  <CreateRoomSlashesLeft />
-                  <h3
-                    className="font-mouse text-[#E62719] text-2xl sm:text-3xl lg:text-4xl uppercase tracking-wide leading-none select-none text-center"
-                  >
-                    CREATE A ROOM
-                  </h3>
-                  <CreateRoomSlashesRight />
-                </div>
-
-                <form onSubmit={handleCreate} className="flex flex-col gap-4">
-                  <div>
-                    <label className="block text-xs sm:text-sm font-bold text-[#1A1614] mb-1.5 font-outfit">
-                      Your name
-                    </label>
-                    <input
-                      type="text"
-                      value={createName}
-                      onChange={(e) => setCreateName(e.target.value)}
-                      placeholder="Enter your name"
-                      className="w-full px-4 py-2.5 sm:py-3 bg-[#F7EFE5] border-[1.5px] border-[#DED4C7] rounded-xl text-sm font-outfit text-[#1A1614] placeholder:text-[#A89D90] focus:outline-none focus:border-[#E62719] focus:bg-white transition"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="w-full mt-2 cursor-pointer bg-[#E62719] hover:bg-[#D41E11] text-white rounded-full py-3 sm:py-3.5 px-4 font-modak text-lg sm:text-xl tracking-wide flex items-center justify-center gap-2 transition active:scale-[0.98] shadow-none select-none"
-                  >
-                    <span>CREATE ROOM</span>
-                    <span className="text-xl sm:text-2xl leading-none">→</span>
-                  </button>
-                </form>
+              <span
+                className="font-modak text-[#FFBA00] text-center uppercase leading-[1.05]"
+                style={{
+                  fontSize: 'clamp(1.25rem, 2.5vw, 1.75rem)',
+                  WebkitTextStroke: '7px white',
+                  paintOrder: 'stroke fill',
+                }}
+              >
+                DISTANCE<br />FEELS<br />CLOSER
+              </span>
+              <div className="mt-1 ml-17 sm:ml-18">
+                <DoodleArrowLeft />
               </div>
             </div>
 
-            {/* CARD 2: JOIN A ROOM */}
+            {/* ── RIGHT ANNOTATION: "SAME VIDEO SAME VIBES" (hidden on mobile/tablet to avoid overflow) ── */}
             <div
-              className="flex-1 bg-white rounded-[26px] border-[2.8px] border-[#1A1614] p-5 sm:p-6 flex flex-col justify-between shadow-[0_4px_16px_rgba(0,0,0,0.06)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.09)] transition-all"
+              className="hidden lg:flex absolute -right-40 sm:-right-52 md:-right-64 lg:-right-72 top-[-10px] sm:top-[-20px] flex-col items-center select-none z-20 pointer-events-none"
+              style={{ transform: 'rotate(12deg)' }}
+            >
+              <span
+                className="font-modak text-[#FFBA00] text-center uppercase leading-[1.05]"
+                style={{
+                  fontSize: 'clamp(1.1rem, 2vw, 1.55rem)',
+                  WebkitTextStroke: '6px white',
+                  paintOrder: 'stroke fill',
+                }}
+              >
+                SAME<br />VIDEO<br />SAME<br />VIBES
+              </span>
+              <div className="mt-1 mr-4">
+                <DoodleArrowRight />
+              </div>
+            </div>
+
+            {/* CARD: JOIN A ROOM (Centered) */}
+            <div
+              className="w-full bg-white rounded-[26px] border-[4.5px] border-[#383838] p-5 sm:p-6 flex flex-col shadow-[0_6px_24px_rgba(0,0,0,0.08)] hover:shadow-[0_10px_30px_rgba(0,0,0,0.12)] transition-all"
             >
               <div>
-                {/* Title flanked with red doodle dashes */}
-                <div className="flex items-center justify-center gap-2 mb-4">
-                  <JoinRoomDashesLeft />
+                {/* Title */}
+                <div className="flex items-center justify-center mb-3">
                   <h3
-                    className="font-mouse text-[#E62719] text-2xl sm:text-3xl lg:text-4xl uppercase tracking-wide leading-none select-none text-center"
+                    className="font-mouse text-[#E62719] text-3xl sm:text-4xl lg:text-[46px] uppercase tracking-wider leading-none select-none text-center"
                   >
                     JOIN A ROOM
                   </h3>
-                  <JoinRoomDashesRight />
                 </div>
 
                 <form onSubmit={handleJoin} className="flex flex-col gap-3">
@@ -472,10 +662,21 @@ export default function LandingPage() {
                     <input
                       type="text"
                       value={joinName}
-                      onChange={(e) => setJoinName(e.target.value)}
+                      onChange={(e) => {
+                        setJoinName(e.target.value);
+                        if (joinNameError) setJoinNameError(null);
+                      }}
                       placeholder="Enter your name"
-                      className="w-full px-4 py-2.5 sm:py-2.5 bg-[#F7EFE5] border-[1.5px] border-[#DED4C7] rounded-xl text-sm font-outfit text-[#1A1614] placeholder:text-[#A89D90] focus:outline-none focus:border-[#E62719] focus:bg-white transition"
+                      className={`w-full px-4 py-2.5 sm:py-2.5 bg-[#F4EBD9] border-[1.5px] ${
+                        joinNameError ? 'border-[#E62719] ring-2 ring-[#E62719]/20' : 'border-[#D8CBB8]'
+                      } rounded-xl text-sm font-outfit text-[#1A1614] placeholder:text-[#64594A] focus:outline-none focus:border-[#E62719] focus:bg-white transition`}
                     />
+                    {joinNameError && (
+                      <p className="mt-1 text-xs font-bold text-[#E62719] flex items-center gap-1 font-outfit">
+                        <span>⚠️</span>
+                        <span>{joinNameError}</span>
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -485,18 +686,38 @@ export default function LandingPage() {
                     <input
                       type="text"
                       value={joinCode}
-                      onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
-                      placeholder="Enter room code"
-                      className="w-full px-4 py-2.5 sm:py-2.5 bg-[#F7EFE5] border-[1.5px] border-[#DED4C7] rounded-xl text-sm font-outfit font-mono uppercase tracking-wider text-[#1A1614] placeholder:text-[#A89D90] focus:outline-none focus:border-[#E62719] focus:bg-white transition"
+                      maxLength={6}
+                      onChange={(e) => {
+                        const val = e.target.value.toUpperCase().replace(/\s+/g, '').slice(0, 6);
+                        setJoinCode(val);
+                        if (joinCodeError) setJoinCodeError(null);
+                      }}
+                      placeholder="Enter 6-char code"
+                      className={`w-full px-4 py-2.5 sm:py-2.5 bg-[#F4EBD9] border-[1.5px] ${
+                        joinCodeError ? 'border-[#E62719] ring-2 ring-[#E62719]/20' : 'border-[#D8CBB8]'
+                      } rounded-xl text-sm font-outfit font-mono uppercase tracking-widest text-[#1A1614] placeholder:text-[#64594A] placeholder:tracking-normal focus:outline-none focus:border-[#E62719] focus:bg-white transition`}
                     />
+                    {joinCodeError && (
+                      <p className="mt-1 text-xs font-bold text-[#E62719] flex items-center gap-1 font-outfit">
+                        <span>⚠️</span>
+                        <span>{joinCodeError}</span>
+                      </p>
+                    )}
                   </div>
 
                   <button
                     type="submit"
-                    className="w-full mt-1 cursor-pointer bg-[#E62719] hover:bg-[#D41E11] text-white rounded-full py-3 sm:py-3.5 px-4 font-modak text-lg sm:text-xl tracking-wide flex items-center justify-center gap-2 transition active:scale-[0.98] shadow-none select-none"
+                    disabled={isJoining}
+                    className="w-full mt-2 cursor-pointer bg-[#E62719] hover:bg-[#D41E11] text-white rounded-full py-3 sm:py-3.5 px-4 font-modak text-xl sm:text-2xl tracking-wider border-[2.5px] border-[#18181B] shadow-[0_5px_0_#18181B] active:translate-y-[4px] active:shadow-[0_1px_0_#18181B] disabled:opacity-60 disabled:cursor-not-allowed disabled:active:translate-y-0 disabled:active:shadow-[0_5px_0_#18181B] transition-all flex items-center justify-center gap-2 select-none"
                   >
-                    <span>JOIN ROOM</span>
-                    <span className="text-xl sm:text-2xl leading-none">→</span>
+                    {isJoining ? (
+                      <>
+                        <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                        <span>JOINING...</span>
+                      </>
+                    ) : (
+                      <span>JOIN ROOM</span>
+                    )}
                   </button>
                 </form>
               </div>
@@ -507,20 +728,113 @@ export default function LandingPage() {
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
-          4. FOOTER: "You'll be the Host. Share the code/link with friends."
+          4. FOOTER
           ══════════════════════════════════════════════════════════════════════ */}
-      <footer className="relative z-20 flex flex-col items-center justify-center pb-4 pt-1 flex-shrink-0 select-none">
-        <div className="flex items-center gap-2 sm:gap-3">
-          <HostDashesLeft />
-          <p className="font-outfit font-bold text-sm sm:text-base text-[#1A1614]">
-            You&apos;ll be the Host.
-          </p>
-          <HostDashesRight />
-        </div>
-        <p className="font-outfit text-xs sm:text-sm text-[#7A6F64] mt-0.5">
-          Share the code/link with friends.
+      <footer className={`relative z-20 flex flex-col items-center justify-center pb-3 flex-shrink-0 select-none ${
+        contentReady ? 'animate-fade-rise' : 'opacity-0 pointer-events-none'
+      }`}>
+        <p className="font-comic font-bold text-xs sm:text-[13px] text-[#7A6E60] tracking-tight leading-none text-center">
+          Watch YouTube together in perfect sync with friends.
         </p>
       </footer>
+
+      {/* ══════════════════════════════════════════════════════════════════════
+          5. CREATE ROOM MODAL POP-UP
+          ══════════════════════════════════════════════════════════════════════ */}
+      {isCreateModalOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45 backdrop-blur-[3px] animate-fade-in"
+          onClick={() => {
+            setIsCreateModalOpen(false);
+            setCreateError(null);
+          }}
+        >
+          <div
+            className="relative w-full max-w-[370px] bg-white rounded-[28px] border-[4.5px] border-[#383838] p-6 shadow-[0_16px_48px_rgba(0,0,0,0.25)] select-none"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close Button */}
+            <button
+              onClick={() => {
+                setIsCreateModalOpen(false);
+                setCreateError(null);
+              }}
+              className="absolute top-4 right-4 w-9 h-9 rounded-full bg-[#F4EBD9] border-[2px] border-[#383838] hover:bg-[#EAE0CD] text-[#1A1614] font-bold text-base flex items-center justify-center cursor-pointer transition active:scale-95 shadow-[0_2px_0_#18181B]"
+              aria-label="Close modal"
+            >
+              ✕
+            </button>
+
+            {/* Modal Title */}
+            <div className="flex items-center justify-center mb-4 pt-1">
+              <h3 className="font-mouse text-[#E62719] text-4xl sm:text-5xl uppercase tracking-wider leading-none text-center">
+                CREATE A ROOM
+              </h3>
+            </div>
+
+            {/* Modal Form */}
+            <form onSubmit={handleCreate} className="flex flex-col gap-4">
+              <div>
+                <label className="block text-xs sm:text-sm font-bold text-[#1A1614] mb-1.5 font-outfit">
+                  Your name
+                </label>
+                <input
+                  ref={nameInputRef}
+                  type="text"
+                  value={createName}
+                  onChange={(e) => {
+                    setCreateName(e.target.value);
+                    if (createError) setCreateError(null);
+                  }}
+                  placeholder="Enter your name"
+                  autoFocus
+                  className={`w-full px-4 py-2.5 bg-[#F4EBD9] border-[1.5px] ${
+                    createError ? 'border-[#E62719] ring-2 ring-[#E62719]/20' : 'border-[#D8CBB8]'
+                  } rounded-xl text-sm font-outfit text-[#1A1614] placeholder:text-[#64594A] focus:outline-none focus:border-[#E62719] focus:bg-white transition`}
+                />
+                {createError && (
+                  <p className="mt-1 text-xs font-bold text-[#E62719] flex items-center gap-1 font-outfit">
+                    <span>⚠️</span>
+                    <span>{createError}</span>
+                  </p>
+                )}
+              </div>
+
+              {/* Host note: moved into Create Modal */}
+              <div className="flex flex-col items-center justify-center py-2.5 px-3 bg-[#F4EBD9]/80 rounded-xl border border-[#D8CBB8]/70 text-center">
+                <div className="flex items-center gap-2">
+                  <HostDashesLeft />
+                  <p className="font-comic font-bold text-sm sm:text-[15px] text-[#1A1614] leading-tight">
+                    You&apos;ll be the Host.
+                  </p>
+                  <HostDashesRight />
+                </div>
+                <p className="font-comic font-bold text-xs text-[#64594A] mt-1 tracking-tight leading-none text-center">
+                  Share the code/link with friends.
+                </p>
+              </div>
+
+              <button
+                type="submit"
+                disabled={isCreating}
+                className="w-full mt-1 cursor-pointer bg-[#E62719] hover:bg-[#D41E11] text-white rounded-full py-3 px-4 font-modak text-xl tracking-wider border-[2.5px] border-[#18181B] shadow-[0_5px_0_#18181B] active:translate-y-[4px] active:shadow-[0_1px_0_#18181B] disabled:opacity-60 disabled:cursor-not-allowed disabled:active:translate-y-0 disabled:active:shadow-[0_5px_0_#18181B] transition-all flex items-center justify-center gap-2 select-none"
+              >
+                {isCreating ? (
+                  <>
+                    <span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                    <span>CREATING...</span>
+                  </>
+                ) : (
+                  <>
+                    <span className="text-2xl leading-none font-bold select-none">+</span>
+                    <span>CREATE ROOM</span>
+                  </>
+                )}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

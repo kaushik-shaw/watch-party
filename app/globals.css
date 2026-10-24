@@ -1,8 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Anton+SC&family=Gasoek+One&family=Modak&family=Mouse+Memoirs&family=Outfit:wght@100..900&family=Ranchers&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Anton+SC&family=Comic+Neue:wght@400;700&family=Gasoek+One&family=Modak&family=Mouse+Memoirs&family=Outfit:wght@100..900&family=Ranchers&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-anton: 'Anton SC', sans-serif;
+  --font-comic: 'Comic Neue', 'Comic Sans MS', cursive, sans-serif;
   --font-gasoek: 'Gasoek One', sans-serif;
   --font-modak: 'Modak', cursive;
   --font-mouse: 'Mouse Memoirs', sans-serif;
@@ -12,11 +13,16 @@
 
 :root {
   --font-anton: 'Anton SC', sans-serif;
+  --font-comic: 'Comic Neue', 'Comic Sans MS', cursive, sans-serif;
   --font-gasoek: 'Gasoek One', sans-serif;
   --font-modak: 'Modak', cursive;
   --font-mouse: 'Mouse Memoirs', sans-serif;
   --font-outfit: 'Outfit', sans-serif;
   --font-ranchers: 'Ranchers', cursive;
+}
+
+.font-comic {
+  font-family: 'Comic Neue', 'Comic Sans MS', cursive, sans-serif !important;
 }
 
 .font-ranchers {
@@ -69,4 +75,141 @@ body {
   color: #1E1B18;
   font-family: 'Outfit', sans-serif;
   overflow-x: hidden;
+}
+
+/* ── Custom Animations ────────────────────────────────────────────────────── */
+
+/* Drop down with rebound for nav elements */
+@keyframes dropBounce {
+  0% {
+    transform: translate3d(0, -120px, 0);
+    opacity: 0;
+  }
+  60% {
+    transform: translate3d(0, 12px, 0);
+    opacity: 1;
+  }
+  78% {
+    transform: translate3d(0, -4px, 0);
+  }
+  90% {
+    transform: translate3d(0, 2px, 0);
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+/* Headline sweep — starts off-screen left + below, arcs upward following the
+   text's own SVG curvature, overshoots slightly right, then settles.
+   Only 3 transform stops so the browser interpolates one continuous motion. */
+@keyframes curvedSlideIn {
+  0% {
+    transform: translate3d(-110vw, 180px, 0) rotate(-12deg) scale(0.9);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  70% {
+    transform: translate3d(18px, -8px, 0) rotate(1.5deg) scale(1.015);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(0, 0, 0) rotate(0deg) scale(1);
+    opacity: 1;
+  }
+}
+
+/* Fade-rise for content below headline */
+@keyframes fadeRiseIn {
+  0% {
+    transform: translate3d(0, 40px, 0);
+    opacity: 0;
+  }
+  100% {
+    transform: translate3d(0, 0, 0);
+    opacity: 1;
+  }
+}
+
+/* ── 1. Nav drops FIRST (no delay — fires as soon as navReady is set) ── */
+.animate-drop-bounce {
+  animation: dropBounce 0.7s cubic-bezier(0.34, 1.25, 0.64, 1) both;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+
+/* CREATE ROOM button follows logo with a tiny stagger */
+.animate-drop-bounce-delay {
+  animation: dropBounce 0.7s cubic-bezier(0.34, 1.25, 0.64, 1) 0.12s both;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+
+/* ── 2. Headline sweeps in AFTER nav lands ── */
+.animate-curved-slide-in {
+  animation: curvedSlideIn 1s cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform-origin: center center;
+}
+
+/* ── 3. Content below fades up AFTER headline ── */
+.animate-fade-rise {
+  animation: fadeRiseIn 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+}
+
+/* ── 4. Images pop out from their respective corners with rebound ── */
+@keyframes popFromBottomLeft {
+  0% {
+    transform: translate3d(-60%, 60%, 0) scale(0.3) rotate(-8deg);
+    opacity: 0;
+  }
+  65% {
+    transform: translate3d(4%, -4%, 0) scale(1.06) rotate(0.5deg);
+    opacity: 1;
+  }
+  82% {
+    transform: translate3d(-1.5%, 1.5%, 0) scale(0.98) rotate(-0.3deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+@keyframes popFromBottomRight {
+  0% {
+    transform: translate3d(60%, 60%, 0) scale(0.3) rotate(8deg);
+    opacity: 0;
+  }
+  65% {
+    transform: translate3d(-4%, -4%, 0) scale(1.06) rotate(-0.5deg);
+    opacity: 1;
+  }
+  82% {
+    transform: translate3d(1.5%, 1.5%, 0) scale(0.98) rotate(0.3deg);
+  }
+  100% {
+    transform: translate3d(0, 0, 0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+}
+
+.animate-pop-left {
+  animation: popFromBottomLeft 0.75s cubic-bezier(0.34, 1.25, 0.64, 1) both;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform-origin: bottom left;
+}
+
+.animate-pop-right {
+  animation: popFromBottomRight 0.75s cubic-bezier(0.34, 1.25, 0.64, 1) 0.12s both;
+  will-change: transform, opacity;
+  backface-visibility: hidden;
+  transform-origin: bottom right;
 }
