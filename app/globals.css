@@ -2,6 +2,7 @@
 @import "tailwindcss";
 
 @theme {
+  --breakpoint-xs: 475px;
   --font-anton: 'Anton SC', sans-serif;
   --font-comic: 'Comic Neue', 'Comic Sans MS', cursive, sans-serif;
   --font-gasoek: 'Gasoek One', sans-serif;
@@ -71,7 +72,7 @@
 }
 
 body {
-  background-color: #F8EFE4;
+  background-color: #F7EAD0;
   color: #1E1B18;
   font-family: 'Outfit', sans-serif;
   overflow-x: hidden;

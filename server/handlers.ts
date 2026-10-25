@@ -322,7 +322,189 @@ export function registerSocketHandlers(
     }
   });
 
-  // ─── 8. DISCONNECT ──────────────────────────────────────────────────────────
+  // ─── 8. REACTIONS ─────────────────────────────────────────────────────────
+  socket.on('reaction', (data: any) => {
+    try {
+      const roomCode = data?.roomCode || socket.data.roomCode;
+      const emoji = data?.emoji;
+      const username = data?.username || 'Someone';
+      const userId = data?.userId || socket.data.userId;
+
+      if (!roomCode || !emoji) return;
+
+      const room = roomManager.getRoom(roomCode);
+      if (room) {
+        room.broadcast(io, 'reaction_received', {
+          id: Math.random().toString(36).substring(2, 9),
+          userId,
+          username,
+          emoji,
+          timestamp: Date.now(),
+        });
+      }
+    } catch (err: any) {
+      console.error('[reaction error]', err);
+    }
+  });
+
+  // ─── 9. CHAT MESSAGE ───────────────────────────────────────────────────────
+  socket.on('send_chat', (data: any, callback?: any) => {
+    try {
+      const roomCode = data?.roomCode || socket.data.roomCode;
+      const userId = data?.userId || socket.data.userId;
+      const username = data?.username || 'Guest';
+      const message = data?.message?.trim();
+
+      if (!roomCode || !message) {
+        if (typeof callback === 'function') callback({ success: false, error: 'Empty message' });
+        return;
+      }
+
+      const room = roomManager.getRoom(roomCode);
+      if (room) {
+        const chatItem = {
+          id: Math.random().toString(36).substring(2, 9),
+          userId,
+          username,
+          message,
+          timestamp: Date.now(),
+        };
+        room.broadcast(io, 'chat_received', chatItem);
+        if (typeof callback === 'function') callback({ success: true, chat: chatItem });
+      }
+    } catch (err: any) {
+      console.error('[send_chat error]', err);
+    }
+  });
+
+  // ─── 10. ACTION REQUEST (Participant requests Pause/Play/Video) ─────────────
+  socket.on('action_request', (data: any, callback?: any) => {
+    try {
+      const roomCode = data?.roomCode || socket.data.roomCode;
+      const userId = data?.userId || socket.data.userId;
+      const username = data?.username || 'Guest';
+      const action = data?.action; // 'pause' | 'play' | 'change_video'
+      const description = data?.description;
+      const targetValue = data?.targetValue;
+
+      if (!roomCode || !action) return;
+
+      const room = roomManager.getRoom(roomCode);
+      if (room) {
+        const requestItem = {
+          id: 'req_' + Math.random().toString(36).substring(2, 9),
+          userId,
+          username,
+          action,
+          description: description || (action === 'pause' ? 'wants to Pause the video' : action === 'play' ? 'wants to Play the video' : 'wants to play a new video'),
+          targetValue,
+          timestamp: Date.now(),
+        };
+        room.broadcast(io, 'request_added', requestItem);
+        if (typeof callback === 'function') callback({ success: true, request: requestItem });
+      }
+    } catch (err: any) {
+      console.error('[action_request error]', err);
+    }
+  });
+
+  // ─── 11. RESOLVE REQUEST (Host/Mod approves or rejects) ────────────────────
+  socket.on('resolve_request', (data: any, callback?: any) => {
+    try {
+      const roomCode = data?.roomCode || socket.data.roomCode;
+      const userId = data?.userId || socket.data.userId;
+      const requestId = data?.requestId;
+      const approved = Boolean(data?.approved);
+      const action = data?.action;
+      const targetValue = data?.targetValue;
+
+      if (!roomCode || !requestId) return;
+
+      const room = roomManager.getRoom(roomCode);
+      if (!room) return;
+
+      const participant = room.getParticipant(userId);
+      if (!participant || (participant.role !== 'host' && participant.role !== 'moderator')) {
+        socket.emit('permission_denied', { message: 'Only hosts or mods can resolve requests' });
+        return;
+      }
+
+      // If approved, execute the corresponding action!
+      if (approved && action) {
+        if (action === 'pause') {
+          room.updatePlayback('pause', typeof targetValue === 'number' ? targetValue : room.playback.currentTime);
+          room.broadcastSyncState(io);
+        } else if (action === 'play') {
+          room.updatePlayback('play', typeof targetValue === 'number' ? targetValue : room.playback.currentTime);
+          room.broadcastSyncState(io);
+        } else if (action === 'change_video' && targetValue) {
+          room.changeVideo(targetValue);
+          room.broadcastSyncState(io);
+        }
+      }
+
+      room.broadcast(io, 'request_resolved', { requestId, approved, resolvedBy: participant.username });
+      if (typeof callback === 'function') callback({ success: true });
+    } catch (err: any) {
+      console.error('[resolve_request error]', err);
+    }
+  });
+
+  // ─── 12. UPDATE ROLE / KICK ───────────────────────────────────────────────
+  socket.on('update_role', (data: any, callback?: any) => {
+    try {
+      const roomCode = data?.roomCode || socket.data.roomCode;
+      const hostUserId = data?.userId || socket.data.userId;
+      const targetUserId = data?.targetUserId;
+      const newRole = data?.newRole; // 'host' | 'moderator' | 'participant'
+
+      if (!roomCode || !targetUserId || !newRole) return;
+
+      const room = roomManager.getRoom(roomCode);
+      if (!room) return;
+
+      if (room.hostId !== hostUserId) {
+        socket.emit('permission_denied', { message: 'Only host can change user roles' });
+        return;
+      }
+
+      room.updateParticipantRole(targetUserId, newRole);
+      room.broadcastSyncState(io);
+      if (typeof callback === 'function') callback({ success: true });
+    } catch (err: any) {
+      console.error('[update_role error]', err);
+    }
+  });
+
+  socket.on('kick_participant', (data: any, callback?: any) => {
+    try {
+      const roomCode = data?.roomCode || socket.data.roomCode;
+      const hostUserId = data?.userId || socket.data.userId;
+      const targetUserId = data?.targetUserId;
+
+      if (!roomCode || !targetUserId) return;
+
+      const room = roomManager.getRoom(roomCode);
+      if (!room) return;
+
+      if (room.hostId !== hostUserId) {
+        socket.emit('permission_denied', { message: 'Only host can kick members' });
+        return;
+      }
+
+      const kicked = room.removeParticipant(targetUserId);
+      room.deleteParticipant(targetUserId);
+      if (kicked) {
+        room.broadcast(io, 'participant_kicked', { targetUserId, username: kicked.username });
+        room.broadcastSyncState(io);
+      }
+      if (typeof callback === 'function') callback({ success: true });
+    } catch (err: any) {
+      console.error('[kick_participant error]', err);
+    }
+  });
+
+  // ─── 13. DISCONNECT ──────────────────────────────────────────────────────────
   socket.on('disconnect', () => {
     try {
       const roomCode = socket.data.roomCode;

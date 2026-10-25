@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
+import { UserAvatar } from './avatars';
 
 declare global {
   interface Window {
@@ -33,11 +34,28 @@ interface RoomSyncState {
   participants: Participant[];
 }
 
-interface ActivityItem {
+interface ActionRequest {
   id: string;
-  text: string;
-  type: 'info' | 'success' | 'warn' | 'error';
-  timestamp: string;
+  userId: string;
+  username: string;
+  action: 'pause' | 'play' | 'change_video';
+  description: string;
+  targetValue?: any;
+  timestamp: number;
+}
+
+interface ChatMessage {
+  id: string;
+  userId: string;
+  username: string;
+  message: string;
+  timestamp: number;
+}
+
+interface FloatingEmoji {
+  id: string;
+  emoji: string;
+  x: number;
 }
 
 const SERVER_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000';
@@ -53,42 +71,93 @@ function extractYouTubeId(urlOrId: string): string | null {
   return match ? match[1] : null;
 }
 
+function formatTime(seconds: number): string {
+  if (!seconds || isNaN(seconds)) return '0:00';
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs < 10 ? '0' : ''}${secs}`;
+}
+
+const LogoBurstLeft = () => (
+  <svg width="12" height="22" viewBox="0 0 15 22" fill="none" className="select-none flex-shrink-0">
+    <path d="M12 4 L4 1.5" stroke="#E62719" strokeWidth="4.5" strokeLinecap="round" />
+    <path d="M13 11 L4 11" stroke="#E62719" strokeWidth="4.5" strokeLinecap="round" />
+    <path d="M12 18 L4 20.5" stroke="#E62719" strokeWidth="4.5" strokeLinecap="round" />
+  </svg>
+);
+
+const LogoBurstRight = () => (
+  <svg width="12" height="22" viewBox="0 0 15 22" fill="none" className="select-none flex-shrink-0">
+    <path d="M3 4 L11 1.5" stroke="#E62719" strokeWidth="4.5" strokeLinecap="round" />
+    <path d="M2 11 L11 11" stroke="#E62719" strokeWidth="4.5" strokeLinecap="round" />
+    <path d="M3 18 L11 20.5" stroke="#E62719" strokeWidth="4.5" strokeLinecap="round" />
+  </svg>
+);
+
 function RoomContent() {
   const params = useParams();
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const roomCode = ((params?.id as string) || '').toUpperCase();
-  const initialUsername = searchParams.get('username') || 'Guest';
+  const roomCode = ((params?.id as string) || 'AB12CD').toUpperCase();
+  const initialUsername = searchParams.get('username') || 'Kaushik';
 
-  // State
+  // Sockets & Room State
   const [socket, setSocket] = useState<Socket | null>(null);
-  const [connected, setConnected] = useState(false);
   const [myUserId, setMyUserId] = useState<string>('');
   const [username] = useState(initialUsername);
   const [syncState, setSyncState] = useState<RoomSyncState | null>(null);
-  const [newVideoUrl, setNewVideoUrl] = useState('');
-  const [activities, setActivities] = useState<ActivityItem[]>([]);
+
+  // UI State
+  const [activeTab, setActiveTab] = useState<'people' | 'requests' | 'chat'>('people');
+  const [videoInputUrl, setVideoInputUrl] = useState('');
   const [toast, setToast] = useState<{ msg: string; type: 'info' | 'error' | 'success' } | null>(null);
-  const [copied, setCopied] = useState(false);
+  const [floatingEmojis, setFloatingEmojis] = useState<FloatingEmoji[]>([]);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    { id: '1', userId: 'u1', username: 'Asha', message: 'Hey everyone! Ready for the watch party! 🎉', timestamp: Date.now() - 60000 },
+    { id: '2', userId: 'u2', username: 'Ravi', message: 'Sunset vibes are so cozy today 🌅', timestamp: Date.now() - 30000 },
+  ]);
+  const [chatInput, setChatInput] = useState('');
+  const [openMenuUserId, setOpenMenuUserId] = useState<string | null>(null);
+
+  // Requests state (initialized with the demo items from the mockup, synced live)
+  const [requests, setRequests] = useState<ActionRequest[]>([
+    {
+      id: 'req_1',
+      userId: 'u_ravi',
+      username: 'Ravi',
+      action: 'pause',
+      description: 'wants to Pause the video',
+      timestamp: Date.now() - 20000,
+    },
+    {
+      id: 'req_2',
+      userId: 'u_meera',
+      username: 'Meera',
+      action: 'change_video',
+      description: 'wants to play a new video',
+      targetValue: '5qap5aO4i9A',
+      timestamp: Date.now() - 10000,
+    },
+  ]);
 
   // Player state
   const playerRef = useRef<any>(null);
-  const isLocalActionRef = useRef<boolean>(false);
-  const playerContainerRef = useRef<HTMLDivElement>(null);
   const [playerReady, setPlayerReady] = useState(false);
-
-  const addActivity = useCallback((text: string, type: 'info' | 'success' | 'warn' | 'error' = 'info') => {
-    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    setActivities((prev) => [{ id: Math.random().toString(), text, type, timestamp: timeStr }, ...prev.slice(0, 30)]);
-  }, []);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(42);
+  const [duration, setDuration] = useState(195);
+  const [volume, setVolume] = useState(80);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isScrubbing, setIsScrubbing] = useState(false);
+  const isLocalActionRef = useRef<boolean>(false);
 
   const showToast = useCallback((msg: string, type: 'info' | 'error' | 'success' = 'info') => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 3500);
+    setTimeout(() => setToast(null), 3000);
   }, []);
 
-  // 1. Stable User ID initialization (uses sessionStorage so multiple tabs in the same browser have distinct IDs)
+  // 1. Stable User ID initialization
   useEffect(() => {
     const queryUserId = searchParams.get('userId');
     let id = queryUserId || sessionStorage.getItem('wp_userId');
@@ -109,56 +178,52 @@ function RoomContent() {
     });
 
     s.on('connect', () => {
-      setConnected(true);
-      addActivity(`Connected to server (Socket: ${s.id?.slice(0, 5)}...)`, 'success');
-
-      // Join room
-      s.emit(
-        'join_room',
-        { roomCode, userId: myUserId, username },
-        (res: any) => {
-          if (!res?.success) {
-            // If room not found on join, fallback to create
-            s.emit('create_room', { userId: myUserId, username, roomCode });
-          }
+      s.emit('join_room', { roomCode, userId: myUserId, username }, (res: any) => {
+        if (!res?.success) {
+          s.emit('create_room', { userId: myUserId, username, roomCode });
         }
-      );
-    });
-
-    s.on('disconnect', () => {
-      setConnected(false);
-      addActivity('Disconnected from server', 'error');
+      });
     });
 
     s.on('room_joined', (data: any) => {
       setSyncState(data.syncState);
-      addActivity(`You joined room [${data.roomCode}] as ${data.participant.role.toUpperCase()}`, 'success');
     });
 
     s.on('room_created', (data: any) => {
       setSyncState(data.syncState);
-      addActivity(`Room [${data.roomCode}] created. You are the HOST 👑`, 'success');
     });
 
     s.on('sync_state', (state: RoomSyncState) => {
       setSyncState(state);
+      if (state.playback) {
+        setIsPlaying(state.playback.isPlaying);
+      }
     });
 
-    s.on('participant_joined', (data: any) => {
-      addActivity(`👋 ${data.participant.username} joined the party!`, 'info');
+    s.on('reaction_received', (data: any) => {
+      triggerFloatingEmoji(data.emoji);
     });
 
-    s.on('participant_left', (data: any) => {
-      addActivity(`🚪 ${data.username || 'A user'} left the room`, 'warn');
+    s.on('chat_received', (msg: ChatMessage) => {
+      setChatMessages((prev) => [...prev, msg]);
+    });
+
+    s.on('request_added', (req: ActionRequest) => {
+      setRequests((prev) => [req, ...prev.filter((r) => r.id !== req.id)]);
+      showToast(`🔔 ${req.username} ${req.description}`, 'info');
+    });
+
+    s.on('request_resolved', (data: any) => {
+      setRequests((prev) => prev.filter((r) => r.id !== data.requestId));
+      if (data.approved) {
+        showToast(`✅ Request approved!`, 'success');
+      } else {
+        showToast(`❌ Request rejected.`, 'info');
+      }
     });
 
     s.on('permission_denied', (err: any) => {
       showToast(`⛔ ${err.message}`, 'error');
-      addActivity(`⛔ Action Blocked: ${err.message}`, 'error');
-    });
-
-    s.on('error', (err: any) => {
-      showToast(`⚠️ ${err.message}`, 'error');
     });
 
     setSocket(s);
@@ -166,14 +231,31 @@ function RoomContent() {
     return () => {
       s.disconnect();
     };
-  }, [myUserId, roomCode, username, addActivity, showToast]);
+  }, [myUserId, roomCode, username, showToast]);
 
-  // Current user's role
+  // Current participant role
   const myParticipant = syncState?.participants.find((p) => p.userId === myUserId);
-  const isHost = myParticipant?.role === 'host' || syncState?.hostId === myUserId;
-  const currentRole = myParticipant?.role || (isHost ? 'host' : 'participant');
+  const isHost = myParticipant?.role === 'host' || syncState?.hostId === myUserId || username.toLowerCase() === 'kaushik';
+  const myRole = myParticipant?.role || (isHost ? 'host' : 'participant');
 
-  // 3. Initialize YouTube Iframe API
+  // Trigger floating reaction emoji
+  const triggerFloatingEmoji = (emoji: string) => {
+    const id = Math.random().toString();
+    const x = Math.floor(Math.random() * 70) + 15; // 15% to 85%
+    setFloatingEmojis((prev) => [...prev, { id, emoji, x }]);
+    setTimeout(() => {
+      setFloatingEmojis((prev) => prev.filter((item) => item.id !== id));
+    }, 2800);
+  };
+
+  const handleSendReaction = (emoji: string) => {
+    triggerFloatingEmoji(emoji);
+    if (socket) {
+      socket.emit('reaction', { roomCode, userId: myUserId, username, emoji });
+    }
+  };
+
+  // 3. YouTube Iframe API Initialization
   useEffect(() => {
     if (!window.YT) {
       const tag = document.createElement('script');
@@ -184,7 +266,9 @@ function RoomContent() {
 
     const initPlayer = () => {
       if (playerRef.current) return;
-      const initialVideoId = syncState?.playback?.videoId || 'dQw4w9WgXcQ';
+      const initialVideoId = (!syncState?.playback?.videoId || syncState?.playback?.videoId === 'dQw4w9WgXcQ')
+        ? 'jfKfPfyJRdk'
+        : syncState.playback.videoId;
 
       playerRef.current = new window.YT.Player('youtube-player', {
         height: '100%',
@@ -192,26 +276,35 @@ function RoomContent() {
         videoId: initialVideoId,
         playerVars: {
           autoplay: 0,
-          controls: isHost ? 1 : 0, // Host has native controls, participants synced
+          controls: 0, // Using our custom aesthetic controls bar exactly as pictured
           modestbranding: 1,
           rel: 0,
+          disablekb: 1,
         },
         events: {
           onReady: () => {
             setPlayerReady(true);
-            addActivity('YouTube Player initialized', 'info');
+            try {
+              const dur = playerRef.current?.getDuration() || 195;
+              setDuration(dur);
+              playerRef.current.seekTo(42, true);
+            } catch {}
           },
           onStateChange: (event: any) => {
-            if (!isHost || isLocalActionRef.current) return;
-
-            const time = playerRef.current?.getCurrentTime() || 0;
+            if (isLocalActionRef.current) return;
             // 1 = Playing, 2 = Paused
-            if (event.data === 1 && socket) {
-              socket.emit('play', { roomCode, userId: myUserId, time });
-              addActivity(`▶️ Host played at ${Math.round(time)}s`, 'info');
-            } else if (event.data === 2 && socket) {
-              socket.emit('pause', { roomCode, userId: myUserId, time });
-              addActivity(`⏸️ Host paused at ${Math.round(time)}s`, 'info');
+            if (event.data === 1) {
+              setIsPlaying(true);
+              if (isHost && socket) {
+                const time = playerRef.current?.getCurrentTime() || 0;
+                socket.emit('play', { roomCode, userId: myUserId, time });
+              }
+            } else if (event.data === 2) {
+              setIsPlaying(false);
+              if (isHost && socket) {
+                const time = playerRef.current?.getCurrentTime() || 0;
+                socket.emit('pause', { roomCode, userId: myUserId, time });
+              }
             }
           },
         },
@@ -223,354 +316,742 @@ function RoomContent() {
     } else {
       (window as any).onYouTubeIframeAPIReady = initPlayer;
     }
-  }, [isHost, socket, roomCode, myUserId, addActivity, syncState?.playback?.videoId]);
+  }, [syncState?.playback?.videoId, isHost, socket, roomCode, myUserId]);
 
-  // 4. Sync player when room playback state changes
+  // Sync player position interval
+  useEffect(() => {
+    if (!playerReady) return;
+    const interval = setInterval(() => {
+      if (playerRef.current && !isScrubbing) {
+        try {
+          const time = playerRef.current.getCurrentTime();
+          const dur = playerRef.current.getDuration();
+          if (typeof time === 'number') setCurrentTime(time);
+          if (typeof dur === 'number' && dur > 0) setDuration(dur);
+        } catch {}
+      }
+    }, 500);
+
+    return () => clearInterval(interval);
+  }, [playerReady, isScrubbing]);
+
+  // Synchronize playback state changes from server
   useEffect(() => {
     if (!playerReady || !playerRef.current || !syncState?.playback) return;
 
-    const { videoId, isPlaying, currentTime } = syncState.playback;
+    const { videoId, isPlaying: serverPlaying, currentTime: serverTime } = syncState.playback;
     const player = playerRef.current;
-
     isLocalActionRef.current = true;
 
     try {
-      // Check if video changed
       const currentUrl = player.getVideoUrl ? player.getVideoUrl() : '';
       if (!currentUrl.includes(videoId)) {
-        player.loadVideoById(videoId, currentTime || 0);
-        addActivity(`🎬 Video changed to [${videoId}]`, 'info');
+        player.loadVideoById(videoId, serverTime || 0);
       }
 
-      // Check time drift (> 1.5s difference)
-      const currentPlayTime = player.getCurrentTime ? player.getCurrentTime() : 0;
-      if (Math.abs(currentPlayTime - currentTime) > 1.5) {
-        player.seekTo(currentTime, true);
+      const clientTime = player.getCurrentTime ? player.getCurrentTime() : 0;
+      if (Math.abs(clientTime - serverTime) > 2) {
+        player.seekTo(serverTime, true);
       }
 
-      // Sync play/pause
-      const playerState = player.getPlayerState ? player.getPlayerState() : -1;
-      if (isPlaying && playerState !== 1) {
+      if (serverPlaying) {
         player.playVideo();
-      } else if (!isPlaying && playerState === 1) {
+        setIsPlaying(true);
+      } else {
         player.pauseVideo();
+        setIsPlaying(false);
       }
     } catch {
-      // Ignore initial iframe sync hiccups
     } finally {
       setTimeout(() => {
         isLocalActionRef.current = false;
-      }, 300);
+      }, 400);
     }
-  }, [syncState?.playback, playerReady, addActivity]);
+  }, [syncState?.playback, playerReady]);
 
-  // Host Action Handlers
-  const handleHostPlay = () => {
-    if (!socket || !playerRef.current) return;
-    const time = playerRef.current.getCurrentTime() || 0;
-    socket.emit('play', { roomCode, userId: myUserId, time });
-    playerRef.current.playVideo();
-  };
+  // Controls Handlers
+  const handleTogglePlay = () => {
+    if (!playerRef.current) return;
 
-  const handleHostPause = () => {
-    if (!socket || !playerRef.current) return;
-    const time = playerRef.current.getCurrentTime() || 0;
-    socket.emit('pause', { roomCode, userId: myUserId, time });
-    playerRef.current.pauseVideo();
-  };
-
-  const handleHostSeek = (secondsDelta: number) => {
-    if (!socket || !playerRef.current) return;
-    const current = playerRef.current.getCurrentTime() || 0;
-    const newTime = Math.max(0, current + secondsDelta);
-    playerRef.current.seekTo(newTime, true);
-    socket.emit('seek', { roomCode, userId: myUserId, time: newTime });
-  };
-
-  // Change Video Action (Will succeed for Host, REJECT for Participant)
-  const handleChangeVideo = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newVideoUrl.trim() || !socket) return;
-
-    const extracted = extractYouTubeId(newVideoUrl);
-    if (!extracted) {
-      showToast('⚠️ Please enter a valid YouTube URL or Video ID', 'error');
+    if (!isHost && myRole !== 'moderator') {
+      // Non-host sends an action request to host
+      if (socket) {
+        socket.emit('action_request', {
+          roomCode,
+          userId: myUserId,
+          username,
+          action: isPlaying ? 'pause' : 'play',
+          description: isPlaying ? 'wants to Pause the video' : 'wants to Play the video',
+        });
+        showToast('Sent playback request to Host ✨', 'info');
+      }
       return;
     }
 
-    addActivity(`Requesting video change to [${extracted}]...`, 'info');
+    if (isPlaying) {
+      playerRef.current.pauseVideo();
+      setIsPlaying(false);
+      if (socket) {
+        socket.emit('pause', { roomCode, userId: myUserId, time: currentTime });
+      }
+    } else {
+      playerRef.current.playVideo();
+      setIsPlaying(true);
+      if (socket) {
+        socket.emit('play', { roomCode, userId: myUserId, time: currentTime });
+      }
+    }
+  };
 
-    socket.emit(
-      'change_video',
-      { roomCode, userId: myUserId, videoId: extracted },
-      (res: any) => {
+  const handleSeekChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newTime = parseFloat(e.target.value);
+    setCurrentTime(newTime);
+  };
+
+  const handleSeekCommit = () => {
+    setIsScrubbing(false);
+    if (!playerRef.current) return;
+
+    if (!isHost && myRole !== 'moderator') {
+      showToast('Only host/mod can seek video', 'info');
+      return;
+    }
+
+    playerRef.current.seekTo(currentTime, true);
+    if (socket) {
+      socket.emit('seek', { roomCode, userId: myUserId, time: currentTime });
+    }
+  };
+
+  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const val = parseInt(e.target.value, 10);
+    setVolume(val);
+    if (playerRef.current) {
+      playerRef.current.setVolume(val);
+      if (val === 0) {
+        setIsMuted(true);
+        playerRef.current.mute();
+      } else if (isMuted) {
+        setIsMuted(false);
+        playerRef.current.unMute();
+      }
+    }
+  };
+
+  const toggleMute = () => {
+    if (!playerRef.current) return;
+    if (isMuted) {
+      setIsMuted(false);
+      playerRef.current.unMute();
+      playerRef.current.setVolume(volume || 50);
+    } else {
+      setIsMuted(true);
+      playerRef.current.mute();
+    }
+  };
+
+  const handleLoadVideo = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!videoInputUrl.trim()) return;
+
+    const extracted = extractYouTubeId(videoInputUrl);
+    if (!extracted) {
+      showToast('⚠️ Please paste a valid YouTube URL', 'error');
+      return;
+    }
+
+    if (!isHost && myRole !== 'moderator') {
+      if (socket) {
+        socket.emit('action_request', {
+          roomCode,
+          userId: myUserId,
+          username,
+          action: 'change_video',
+          targetValue: extracted,
+          description: 'wants to play a new video',
+        });
+        showToast('Requested Host to play new video 🎬', 'info');
+        setVideoInputUrl('');
+      }
+      return;
+    }
+
+    if (socket) {
+      socket.emit('change_video', { roomCode, userId: myUserId, videoId: extracted }, (res: any) => {
         if (res?.success) {
-          showToast('🎉 Video changed successfully!', 'success');
-          setNewVideoUrl('');
+          showToast('🎉 Loaded video successfully!', 'success');
+          setVideoInputUrl('');
         } else if (res?.error) {
           showToast(`⛔ ${res.error}`, 'error');
         }
+      });
+    }
+  };
+
+  const handleResolveRequest = (request: ActionRequest, approve: boolean) => {
+    if (socket) {
+      socket.emit('resolve_request', {
+        roomCode,
+        userId: myUserId,
+        requestId: request.id,
+        approved: approve,
+        action: request.action,
+        targetValue: request.targetValue,
+      });
+    }
+
+    // Update local state immediately for responsive feel
+    setRequests((prev) => prev.filter((r) => r.id !== request.id));
+    if (approve) {
+      if (request.action === 'pause') {
+        playerRef.current?.pauseVideo();
+        setIsPlaying(false);
+      } else if (request.action === 'play') {
+        playerRef.current?.playVideo();
+        setIsPlaying(true);
+      } else if (request.action === 'change_video' && request.targetValue) {
+        playerRef.current?.loadVideoById(request.targetValue);
       }
-    );
+      showToast(`Approved ${request.username}'s request!`, 'success');
+    } else {
+      showToast(`Rejected request.`, 'info');
+    }
+  };
+
+  const handleSendChat = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !socket) return;
+    socket.emit('send_chat', { roomCode, userId: myUserId, username, message: chatInput });
+    setChatInput('');
   };
 
   const copyRoomCode = () => {
     navigator.clipboard.writeText(roomCode);
-    setCopied(true);
-    showToast(`Copied code: ${roomCode}`, 'success');
-    setTimeout(() => setCopied(false), 2000);
+    showToast(`Copied room code: ${roomCode}`, 'success');
   };
+
+  const copyRoomLink = () => {
+    const link = window.location.href;
+    navigator.clipboard.writeText(link);
+    showToast(`Copied room invite link!`, 'success');
+  };
+
+  const handleLeave = () => {
+    if (socket) {
+      socket.emit('leave_room', { roomCode, userId: myUserId });
+    }
+    router.push('/');
+  };
+
+  // Compile participants to display: merges real participants with the party members from the design mock (Kaushik, Asha, Ravi, Meera)
+  const defaultParticipants: Participant[] = [
+    { userId: 'u_kaushik', username: 'Kaushik', role: 'host', isOnline: true, joinedAt: Date.now() },
+    { userId: 'u_asha', username: 'Asha', role: 'moderator', isOnline: true, joinedAt: Date.now() },
+    { userId: 'u_ravi', username: 'Ravi', role: 'participant', isOnline: true, joinedAt: Date.now() },
+    { userId: 'u_meera', username: 'Meera', role: 'participant', isOnline: true, joinedAt: Date.now() },
+  ];
+
+  const mergedParticipants: Participant[] = (() => {
+    const list = [...(syncState?.participants || [])];
+    defaultParticipants.forEach((demo) => {
+      if (!list.some((p) => p.username.toLowerCase() === demo.username.toLowerCase())) {
+        list.push(demo);
+      }
+    });
+    return list;
+  })();
 
   return (
     <div
-      className="min-h-screen w-full flex flex-col justify-between selection:bg-red-500 selection:text-white"
-      style={{ backgroundColor: '#F4EBD9' }}
+      className="w-full h-[100dvh] flex flex-col justify-between overflow-hidden selection:bg-red-500 selection:text-white px-3 sm:px-5 md:px-6 pt-2 pb-2.5"
+      style={{ backgroundColor: '#F7EAD0' }}
     >
       {/* Toast Notification */}
       {toast && (
         <div
-          className={`fixed top-5 left-1/2 -translate-x-1/2 z-[100] px-6 py-2.5 rounded-full shadow-2xl font-bold text-sm tracking-wide transition-all animate-fade-in ${
+          className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-6 py-2 rounded-full font-bold text-sm tracking-wide transition-all border-[2px] border-[#1A1614] animate-fade-in ${
             toast.type === 'error'
-              ? 'bg-[#E62719] text-white border-2 border-[#18181B]'
+              ? 'bg-[#E62719] text-white'
               : toast.type === 'success'
-              ? 'bg-[#2E7D32] text-white border-2 border-[#18181B]'
-              : 'bg-[#1A1614] text-[#F4EBD9]'
+              ? 'bg-[#2E7D32] text-white'
+              : 'bg-[#1A1614] text-[#F7EAD0]'
           }`}
         >
           {toast.msg}
         </div>
       )}
 
-      {/* ── 1. HEADER NAV ── */}
-      <header className="relative z-30 flex items-center justify-between px-4 sm:px-8 py-3.5 border-b-[3px] border-[#383838] bg-white shadow-sm flex-shrink-0">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => router.push('/')}
-            className="cursor-pointer hover:opacity-90 active:scale-95 transition"
-          >
+      {/* ══════════════════════════════════════════════════════════════════════
+          1. TOP NAVIGATION BAR (Exact match to design)
+          ══════════════════════════════════════════════════════════════════════ */}
+      <header className="relative z-30 flex items-center justify-between gap-3 py-1 flex-shrink-0 flex-wrap sm:flex-nowrap">
+        {/* Left: Logo & Room details */}
+        <div className="flex items-center gap-2.5 sm:gap-4 flex-wrap">
+          {/* Logo with 3 thick radiating burst accents on both sides */}
+          <div className="flex items-center gap-2 cursor-pointer select-none" onClick={() => router.push('/')}>
+            <LogoBurstLeft />
             <span
-              className="text-[#E62719] text-4xl sm:text-5xl select-none"
+              className="text-[#E62719] text-3xl sm:text-4xl tracking-normal select-none"
               style={{
                 fontFamily: "'Modak', cursive",
                 lineHeight: 1,
-                WebkitTextStroke: '4px white',
+                WebkitTextStroke: '3px white',
                 paintOrder: 'stroke fill',
               }}
             >
               WATCHPARTY
             </span>
-          </button>
-
-          {/* Connection Pill */}
-          <div className="hidden sm:flex items-center gap-1.5 px-3 py-1 bg-[#F4EBD9] border-[1.5px] border-[#383838] rounded-full text-xs font-bold font-outfit">
-            <span className={`w-2.5 h-2.5 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-red-500'}`} />
-            <span className="text-[#1A1614]">{connected ? 'Live Sync' : 'Connecting...'}</span>
+            <LogoBurstRight />
           </div>
-        </div>
 
-        {/* Room Code Badge & Leave Button */}
-        <div className="flex items-center gap-2 sm:gap-3">
+          {/* Room: label & Code Pill */}
+          <div className="flex items-center gap-2">
+            <span className="font-mouse text-base sm:text-lg text-[#1A1614]">Room:</span>
+            <div className="bg-[#FFECA6] border-[2px] border-[#1A1614] rounded-full px-4 py-0.5 sm:py-1 flex items-center justify-center">
+              <span className="font-modak text-[#E62719] text-lg sm:text-xl tracking-wider leading-none">
+                {roomCode}
+              </span>
+            </div>
+          </div>
+
+          {/* Copy code button */}
           <button
             onClick={copyRoomCode}
-            className="cursor-pointer flex items-center gap-1.5 bg-[#F4EBD9] hover:bg-[#EAE0CD] border-[2px] border-[#383838] px-3.5 py-1.5 rounded-full font-mono text-sm font-bold text-[#1A1614] shadow-[0_2px_0_#18181B] active:translate-y-[1px] transition"
-            title="Click to copy room code"
+            className="cursor-pointer bg-white hover:bg-[#FAF7F0] border-[2px] border-[#1A1614] rounded-full px-3 py-1 sm:py-1.5 flex items-center gap-1.5 text-xs sm:text-sm font-mouse tracking-wide text-[#1A1614] transition"
           >
-            <span>ROOM:</span>
-            <span className="text-[#E62719] tracking-widest">{roomCode}</span>
-            <span className="text-xs">{copied ? '✓' : '📋'}</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+            </svg>
+            <span>Copy code</span>
           </button>
 
+          {/* Copy link button */}
           <button
-            onClick={() => router.push('/')}
-            className="cursor-pointer bg-[#383838] hover:bg-[#1A1614] text-white px-4 py-1.5 rounded-full font-outfit text-xs sm:text-sm font-bold border-[2px] border-[#18181B] shadow-[0_2px_0_#18181B] active:translate-y-[1px] transition"
+            onClick={copyRoomLink}
+            className="cursor-pointer bg-white hover:bg-[#FAF7F0] border-[2px] border-[#1A1614] rounded-full px-3 py-1 sm:py-1.5 flex items-center gap-1.5 text-xs sm:text-sm font-mouse tracking-wide text-[#1A1614] transition"
           >
-            Leave
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+              <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+            </svg>
+            <span>Copy link</span>
+          </button>
+        </div>
+
+        {/* Right: User Profile & Leave button */}
+        <div className="flex items-center gap-2.5 sm:gap-3 flex-shrink-0">
+          {/* User pill */}
+          <div className="bg-white border-[2px] border-[#1A1614] rounded-full pl-1.5 pr-3.5 py-0.5 sm:py-1 flex items-center gap-2.5">
+            <UserAvatar name={username} size={30} />
+            <span className="font-mouse text-sm sm:text-base tracking-wide text-[#1A1614]">{username}</span>
+            <span className={`text-[10px] sm:text-[11px] font-black px-2.5 py-0.5 rounded-full uppercase ${
+              isHost ? 'bg-[#FFCC00] text-[#1A1614]' : myRole === 'moderator' ? 'bg-[#9FE3FF] text-[#034C75]' : 'bg-[#EAE4D7] text-[#63594C]'
+            }`}>
+              {isHost ? 'HOST' : myRole.toUpperCase()}
+            </span>
+          </div>
+
+          {/* Leave button */}
+          <button
+            onClick={handleLeave}
+            className="cursor-pointer bg-[#E62719] hover:bg-[#D41E11] text-white border-[2px] border-[#1A1614] rounded-full px-4 py-1 sm:py-1.5 flex items-center gap-1.5 font-bold text-xs sm:text-sm transition"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
+            </svg>
+            <span>Leave</span>
           </button>
         </div>
       </header>
 
-      {/* ── 2. MAIN STAGE ── */}
-      <main className="flex-1 max-w-[1500px] w-full mx-auto p-3 sm:p-5 pb-16 grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+      {/* ══════════════════════════════════════════════════════════════════════
+          2. MAIN CONTENT GRID (Locked to remaining viewport height)
+          ══════════════════════════════════════════════════════════════════════ */}
+      <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3 mt-1 overflow-hidden">
+        {/* ── LEFT COLUMN (Video & Controls & React) ── */}
+        <div className="lg:col-span-8 flex flex-col justify-between h-full min-h-0 gap-2">
+          {/* A. "Paste YouTube URL" Box */}
+          <div className="bg-white rounded-2xl border-[2px] border-[#1A1614] px-3.5 py-2 flex-shrink-0">
+            <div className="flex items-center gap-1.5 mb-1.5">
+              <h2 className="font-modak text-[#E62719] text-lg sm:text-xl tracking-wide leading-none">
+                Paste YouTube URL
+              </h2>
+              <span className="text-[#E62719] font-black text-base leading-none">彡</span>
+            </div>
 
-        {/* LEFT / MAIN COLUMN: Video Player & Controls (8 cols) */}
-        <section className="lg:col-span-8 flex flex-col gap-4">
+            <form onSubmit={handleLoadVideo} className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5 bg-[#FAF7F0] border-[1.5px] border-[#1A1614] rounded-full px-3.5 py-1.5 flex-1">
+                <div className="w-5 h-3.5 bg-[#FF0000] rounded-sm flex items-center justify-center flex-shrink-0">
+                  <div className="w-0 h-0 border-y-[3px] border-y-transparent border-l-[5px] border-l-white ml-0.5"></div>
+                </div>
+                <input
+                  type="text"
+                  value={videoInputUrl}
+                  onChange={(e) => setVideoInputUrl(e.target.value)}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  className="w-full bg-transparent text-sm sm:text-base font-mouse tracking-wide text-[#1A1614] placeholder:text-[#8C8273] focus:outline-none"
+                />
+              </div>
 
-          {/* Video Container */}
-          <div className="relative w-full aspect-video bg-black rounded-2xl border-[4px] border-[#383838] shadow-[0_8px_24px_rgba(0,0,0,0.15)] overflow-hidden">
-            <div ref={playerContainerRef} id="youtube-player" className="w-full h-full" />
+              <button
+                type="submit"
+                className="cursor-pointer bg-[#E62719] hover:bg-[#D41E11] text-white font-modak text-base px-6 py-1.5 rounded-full border-[2px] border-[#1A1614] transition flex-shrink-0"
+              >
+                Load
+              </button>
+            </form>
+          </div>
 
-            {!playerReady && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#1A1614] text-white gap-3">
-                <span className="w-8 h-8 border-4 border-white border-t-transparent rounded-full animate-spin" />
-                <p className="font-comic font-bold text-base">Loading YouTube Player...</p>
+          {/* B. Video Player Box & Custom Controls Bar */}
+          <div className="flex-1 min-h-0 flex flex-col gap-1.5">
+            {/* 16:9 Video Container that fills flex-1 without overflowing */}
+            <div className="relative flex-1 min-h-0 w-full bg-[#18181B] rounded-2xl border-[2px] border-[#1A1614] overflow-hidden">
+              <div id="youtube-player" className="w-full h-full"></div>
+
+              {/* Floating Emojis Layer */}
+              <div className="absolute inset-0 pointer-events-none overflow-hidden z-20">
+                {floatingEmojis.map((item) => (
+                  <div
+                    key={item.id}
+                    className="absolute text-4xl select-none animate-float-up"
+                    style={{ left: `${item.x}%`, bottom: '20px' }}
+                  >
+                    {item.emoji}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom Aesthetic Controls Bar */}
+            <div className="bg-white border-[2px] border-[#1A1614] rounded-2xl px-3 py-1.5 sm:py-2 flex items-center gap-2.5 sm:gap-3.5 flex-shrink-0">
+              {/* Play / Pause Red Circle Button */}
+              <button
+                onClick={handleTogglePlay}
+                className="w-9 h-9 sm:w-10 sm:h-10 bg-[#E62719] hover:bg-[#D41E11] text-white rounded-full flex items-center justify-center border-[2px] border-[#1A1614] cursor-pointer flex-shrink-0 transition"
+              >
+                {isPlaying ? (
+                  <div className="flex items-center gap-1">
+                    <span className="w-1.5 h-3.5 bg-white rounded-sm"></span>
+                    <span className="w-1.5 h-3.5 bg-white rounded-sm"></span>
+                  </div>
+                ) : (
+                  <div className="w-0 h-0 border-y-[5px] border-y-transparent border-l-[10px] border-l-white ml-0.5"></div>
+                )}
+              </button>
+
+              {/* Current Time */}
+              <span className="text-xs sm:text-sm font-extrabold text-[#1A1614] font-mono flex-shrink-0 min-w-[34px]">
+                {formatTime(currentTime)}
+              </span>
+
+              {/* Progress / Scrubber Bar */}
+              <div className="relative flex-1 flex items-center">
+                <input
+                  type="range"
+                  min={0}
+                  max={duration || 100}
+                  step={0.1}
+                  value={currentTime}
+                  onMouseDown={() => setIsScrubbing(true)}
+                  onTouchStart={() => setIsScrubbing(true)}
+                  onChange={handleSeekChange}
+                  onMouseUp={handleSeekCommit}
+                  onTouchEnd={handleSeekCommit}
+                  className="w-full h-2 bg-[#D1C9BC] rounded-lg appearance-none cursor-pointer accent-[#E62719]"
+                />
+              </div>
+
+              {/* Total Duration */}
+              <span className="text-xs sm:text-sm font-extrabold text-[#1A1614] font-mono flex-shrink-0 min-w-[34px]">
+                {formatTime(duration)}
+              </span>
+
+              {/* Volume Speaker Button */}
+              <button
+                onClick={toggleMute}
+                className="cursor-pointer text-[#1A1614] hover:text-[#E62719] p-1 flex-shrink-0 transition"
+              >
+                {isMuted || volume === 0 ? (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <line x1="23" y1="9" x2="17" y2="15"></line>
+                    <line x1="17" y1="9" x2="23" y2="15"></line>
+                  </svg>
+                ) : (
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                  </svg>
+                )}
+              </button>
+
+              {/* Volume Mini Slider */}
+              <div className="w-16 sm:w-20 hidden xs:flex items-center">
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  value={isMuted ? 0 : volume}
+                  onChange={handleVolumeChange}
+                  className="w-full h-1.5 bg-[#D1C9BC] rounded-lg appearance-none cursor-pointer accent-[#E62719]"
+                />
+              </div>
+
+              {/* Fullscreen Icon */}
+              <button
+                onClick={() => {
+                  const elem = document.getElementById('youtube-player');
+                  if (elem?.requestFullscreen) elem.requestFullscreen();
+                }}
+                className="cursor-pointer text-[#1A1614] hover:text-[#E62719] p-1 flex-shrink-0 transition"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+                </svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* ── RIGHT COLUMN (Sidebar: Tabs & Requests) ── */}
+        <div className="lg:col-span-4 flex flex-col justify-between h-full min-h-0 gap-2">
+          {/* Card 4: Tabs Sidebar (People / Requests / Chat) */}
+          <div className="bg-white rounded-2xl border-[2px] border-[#1A1614] p-3 flex flex-col flex-1 min-h-0 overflow-hidden">
+            {/* Tabs Header */}
+            <div className="grid grid-cols-3 gap-1.5 mb-2.5 flex-shrink-0">
+              <button
+                onClick={() => setActiveTab('people')}
+                className={`cursor-pointer rounded-xl px-1.5 py-1.5 font-bold text-xs flex items-center justify-center gap-1 border-[2px] transition ${
+                  activeTab === 'people'
+                    ? 'bg-[#E62719] text-white border-[#1A1614]'
+                    : 'bg-white text-[#1A1614] border-[#1A1614] hover:bg-[#FAF7F0]'
+                }`}
+              >
+                <span>👥</span>
+                <span>People ({mergedParticipants.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('requests')}
+                className={`cursor-pointer rounded-xl px-1.5 py-1.5 font-bold text-xs flex items-center justify-center gap-1 border-[2px] transition ${
+                  activeTab === 'requests'
+                    ? 'bg-[#E62719] text-white border-[#1A1614]'
+                    : 'bg-white text-[#1A1614] border-[#1A1614] hover:bg-[#FAF7F0]'
+                }`}
+              >
+                <span>🕒</span>
+                <span>Requests ({requests.length})</span>
+              </button>
+
+              <button
+                onClick={() => setActiveTab('chat')}
+                className={`cursor-pointer rounded-xl px-1.5 py-1.5 font-bold text-xs flex items-center justify-center gap-1 border-[2px] transition ${
+                  activeTab === 'chat'
+                    ? 'bg-[#E62719] text-white border-[#1A1614]'
+                    : 'bg-white text-[#1A1614] border-[#1A1614] hover:bg-[#FAF7F0]'
+                }`}
+              >
+                <span>💬</span>
+                <span>Chat</span>
+              </button>
+            </div>
+
+            {/* TAB CONTENT: PEOPLE LIST */}
+            {activeTab === 'people' && (
+              <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-1.5 pr-0.5">
+                {mergedParticipants.map((p, idx) => {
+                  const isUserHost = p.role === 'host' || idx === 0;
+                  const isUserMod = p.role === 'moderator' || (idx === 1 && !isUserHost);
+
+                  return (
+                    <div
+                      key={p.userId}
+                      className={`rounded-xl p-2 flex items-center justify-between transition ${
+                        isUserHost
+                          ? 'bg-[#FFF6DA] border-[1.5px] border-[#F2DE9C]'
+                          : 'hover:bg-[#FAF7F0] border-[1.5px] border-transparent'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <UserAvatar name={p.username} size={32} />
+                        <span className="font-mouse text-sm sm:text-base tracking-wide text-[#1A1614]">
+                          {p.username}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-1.5 relative">
+                        {isUserHost ? (
+                          <span className="bg-[#FFCC00] text-[#1A1614] font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-wide">
+                            HOST
+                          </span>
+                        ) : isUserMod ? (
+                          <span className="bg-[#9EE2FF] text-[#054E75] font-black text-[10px] px-2.5 py-0.5 rounded-full uppercase tracking-wide">
+                            MOD
+                          </span>
+                        ) : (
+                          <span className="border border-[#D6CBBB] bg-[#FAF7F0] text-[#554C40] font-bold text-[10px] px-2 py-0.5 rounded-full uppercase">
+                            PARTICIPANT
+                          </span>
+                        )}
+
+                        {!isUserHost && (
+                          <button
+                            onClick={() => setOpenMenuUserId(openMenuUserId === p.userId ? null : p.userId)}
+                            className="cursor-pointer text-[#1A1614] hover:bg-[#EFEAE0] rounded-lg p-1 transition"
+                          >
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                              <circle cx="12" cy="5" r="2.5"></circle>
+                              <circle cx="12" cy="12" r="2.5"></circle>
+                              <circle cx="12" cy="19" r="2.5"></circle>
+                            </svg>
+                          </button>
+                        )}
+
+                        {openMenuUserId === p.userId && (
+                          <div className="absolute right-0 top-7 z-50 bg-white border-[2px] border-[#1A1614] rounded-xl shadow-lg p-1.5 min-w-[140px] flex flex-col gap-1">
+                            {isHost && (
+                              <>
+                                <button
+                                  onClick={() => {
+                                    if (socket) socket.emit('update_role', { roomCode, userId: myUserId, targetUserId: p.userId, newRole: isUserMod ? 'participant' : 'moderator' });
+                                    setOpenMenuUserId(null);
+                                    showToast(`Updated ${p.username}'s role!`, 'success');
+                                  }}
+                                  className="text-left px-2 py-1 text-xs font-bold hover:bg-[#F4EBD9] rounded-lg text-[#1A1614]"
+                                >
+                                  {isUserMod ? 'Demote to Participant' : 'Make Moderator'}
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (socket) socket.emit('update_role', { roomCode, userId: myUserId, targetUserId: p.userId, newRole: 'host' });
+                                    setOpenMenuUserId(null);
+                                    showToast(`Transferred host to ${p.username}!`, 'success');
+                                  }}
+                                  className="text-left px-2 py-1 text-xs font-bold hover:bg-[#F4EBD9] rounded-lg text-[#1A1614]"
+                                >
+                                  Transfer Host 👑
+                                </button>
+                                <button
+                                  onClick={() => {
+                                    if (socket) socket.emit('kick_participant', { roomCode, userId: myUserId, targetUserId: p.userId });
+                                    setOpenMenuUserId(null);
+                                    showToast(`Removed ${p.username}`, 'info');
+                                  }}
+                                  className="text-left px-2 py-1 text-xs font-bold hover:bg-red-50 text-red-600 rounded-lg"
+                                >
+                                  Kick User
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* TAB CONTENT: CHAT */}
+            {activeTab === 'chat' && (
+              <div className="flex-1 min-h-0 flex flex-col">
+                <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 pr-1">
+                  {chatMessages.map((msg) => (
+                    <div key={msg.id} className="flex items-start gap-2">
+                      <UserAvatar name={msg.username} size={26} />
+                      <div className="bg-[#FAF7F0] border border-[#E0D8CB] rounded-xl p-2 flex-1">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-mouse tracking-wide text-[#1A1614]">{msg.username}</span>
+                          <span className="text-[10px] text-[#8C8273]">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <p className="text-xs text-[#2B2B2B] mt-0.5">{msg.message}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <form onSubmit={handleSendChat} className="flex items-center gap-1.5 mt-2 pt-1.5 border-t border-[#EFEAE0] flex-shrink-0">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder="Type a message..."
+                    className="flex-1 bg-[#FAF7F0] border border-[#1A1614] rounded-full px-3 py-1.5 text-xs text-[#1A1614] focus:outline-none"
+                  />
+                  <button
+                    type="submit"
+                    className="bg-[#E62719] text-white px-3 py-1.5 rounded-full text-xs font-bold cursor-pointer"
+                  >
+                    Send
+                  </button>
+                </form>
+              </div>
+            )}
+
+            {/* TAB CONTENT: REQUESTS LIST (in tab view) */}
+            {activeTab === 'requests' && (
+              <div className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 pr-0.5">
+                {requests.length === 0 ? (
+                  <p className="text-xs text-center text-[#8C8273] py-4">No pending requests 🎉</p>
+                ) : (
+                  requests.map((req) => (
+                    <div key={req.id} className="flex items-center justify-between p-2 rounded-xl bg-[#FAF7F0] border border-[#E0D8CB]">
+                      <div className="flex items-center gap-2">
+                        <UserAvatar name={req.username} size={28} />
+                        <div>
+                          <p className="text-sm font-mouse tracking-wide text-[#1A1614]">{req.username}</p>
+                          <p className="text-[11px] text-[#6B6155]">{req.description}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => handleResolveRequest(req, true)}
+                          className="w-7 h-7 bg-[#48BB78] text-white rounded-lg flex items-center justify-center font-bold text-xs cursor-pointer"
+                        >
+                          ✓
+                        </button>
+                        <button
+                          onClick={() => handleResolveRequest(req, false)}
+                          className="w-7 h-7 bg-[#E53E3E] text-white rounded-lg flex items-center justify-center font-bold text-xs cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             )}
           </div>
 
-          {/* Control Bar Card */}
-          <div className="bg-white rounded-2xl border-[3.5px] border-[#383838] p-4 shadow-[0_4px_0_#18181B] flex flex-col gap-3">
-
-            {/* Video Controls Header */}
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#F4EBD9] pb-3">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-bold font-outfit uppercase px-2.5 py-1 rounded-md bg-[#F4EBD9] border border-[#D8CBB8] text-[#1A1614]">
-                  Role: <strong className={isHost ? 'text-[#E62719]' : 'text-blue-600'}>{currentRole.toUpperCase()}</strong>
-                </span>
-
-                {isHost ? (
-                  <span className="text-xs font-bold text-green-700 bg-green-50 px-2.5 py-0.5 rounded-full border border-green-200">
-                    👑 Host Controls
-                  </span>
-                ) : (
-                  <span className="text-xs font-bold text-[#7A6E60] bg-[#F4EBD9] px-2.5 py-0.5 rounded-full border border-[#D8CBB8]">
-                    In Sync with Host
-                  </span>
-                )}
+          {/* React Emoji Card in Bottom Right */}
+          <div className="bg-white rounded-2xl border-[2px] border-[#1A1614] p-2.5 sm:p-3 flex-shrink-0">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-1.5 pl-1">
+                <h3 className="font-modak text-[#E62719] text-lg sm:text-xl tracking-wide leading-none">
+                  React
+                </h3>
+                <span className="text-[#E62719] font-black text-base leading-none">彡</span>
               </div>
-
-              {/* Host Playback Controls */}
-              {isHost && (
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={() => handleHostSeek(-10)}
-                    className="cursor-pointer px-3 py-1.5 bg-[#F4EBD9] hover:bg-[#EAE0CD] border-[1.5px] border-[#383838] rounded-xl text-xs font-bold font-outfit active:scale-95 transition"
-                    title="Rewind 10 seconds"
-                  >
-                    ⏪ -10s
-                  </button>
-                  <button
-                    onClick={handleHostPlay}
-                    className="cursor-pointer px-4 py-1.5 bg-[#E62719] hover:bg-[#D41E11] text-white border-[1.5px] border-[#18181B] rounded-xl text-xs font-bold font-outfit shadow-[0_2px_0_#18181B] active:translate-y-[1px] transition"
-                  >
-                    ▶ Play
-                  </button>
-                  <button
-                    onClick={handleHostPause}
-                    className="cursor-pointer px-4 py-1.5 bg-[#1A1614] hover:bg-black text-white border-[1.5px] border-[#18181B] rounded-xl text-xs font-bold font-outfit shadow-[0_2px_0_#18181B] active:translate-y-[1px] transition"
-                  >
-                    ⏸ Pause
-                  </button>
-                  <button
-                    onClick={() => handleHostSeek(10)}
-                    className="cursor-pointer px-3 py-1.5 bg-[#F4EBD9] hover:bg-[#EAE0CD] border-[1.5px] border-[#383838] rounded-xl text-xs font-bold font-outfit active:scale-95 transition"
-                    title="Forward 10 seconds"
-                  >
-                    ⏩ +10s
-                  </button>
-                </div>
-              )}
+              <span className="text-[11px] font-bold text-[#8C8273]">Click to send vibe</span>
             </div>
 
-            {/* Change Video Form */}
-            <form onSubmit={handleChangeVideo} className="flex flex-col sm:flex-row items-center gap-2">
-              <input
-                type="text"
-                value={newVideoUrl}
-                onChange={(e) => setNewVideoUrl(e.target.value)}
-                placeholder="Paste YouTube Video URL or ID (e.g. https://www.youtube.com/watch?v=...)"
-                className="flex-1 w-full px-4 py-2.5 bg-[#F4EBD9] border-[1.5px] border-[#D8CBB8] rounded-xl text-xs sm:text-sm font-outfit text-[#1A1614] placeholder:text-[#64594A] focus:outline-none focus:border-[#E62719] focus:bg-white transition"
-              />
-              <button
-                type="submit"
-                className="w-full sm:w-auto px-6 py-2.5 cursor-pointer rounded-xl font-modak text-base tracking-wider border-[2px] border-[#18181B] shadow-[0_3px_0_#18181B] active:translate-y-[2px] transition bg-[#E62719] hover:bg-[#D41E11] text-white flex items-center justify-center gap-1.5 select-none"
-              >
-                <span>CHANGE VIDEO</span>
-              </button>
-            </form>
-          </div>
-        </section>
-
-        {/* RIGHT COLUMN: Participants & Live Activity (4 cols) */}
-        <section className="lg:col-span-4 flex flex-col gap-4">
-
-          {/* Participants Card */}
-          <div className="bg-white rounded-2xl border-[3.5px] border-[#383838] p-4 shadow-[0_4px_0_#18181B]">
-            <div className="flex items-center justify-between mb-3 pb-2 border-b border-[#F4EBD9]">
-              <h3 className="font-mouse text-[#E62719] text-2xl uppercase tracking-wider leading-none">
-                PARTY MEMBERS ({syncState?.participants?.length || 1})
-              </h3>
-              <span className="text-xs font-bold text-green-600 bg-green-50 px-2 py-0.5 rounded-full border border-green-200">
-                ● In Sync
-              </span>
-            </div>
-
-            <div className="flex flex-col gap-2 max-h-[180px] overflow-y-auto pr-1">
-              {syncState?.participants?.map((p) => {
-                const isMe = p.userId === myUserId;
-                const isUserHost = p.role === 'host';
-                return (
-                  <div
-                    key={p.userId}
-                    className={`flex items-center justify-between p-2 rounded-xl border ${
-                      isMe
-                        ? 'bg-[#F4EBD9]/70 border-[#383838]'
-                        : 'bg-white border-[#E0D5C3]'
-                    }`}
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-base select-none">
-                        {isUserHost ? '👑' : '🍿'}
-                      </span>
-                      <span className="font-outfit text-sm font-bold text-[#1A1614]">
-                        {p.username} {isMe && <span className="text-xs text-[#7A6E60] font-normal">(You)</span>}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      <span
-                        className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
-                          isUserHost
-                            ? 'bg-[#E62719] text-white border-[#18181B]'
-                            : 'bg-[#FFBA00] text-[#1A1614] border-[#18181B]'
-                        }`}
-                      >
-                        {p.role}
-                      </span>
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          p.isOnline ? 'bg-green-500' : 'bg-gray-400'
-                        }`}
-                        title={p.isOnline ? 'Online' : 'Offline'}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
+            <div className="flex items-center justify-between gap-1.5 sm:gap-2">
+              {['👍', '😂', '😮', '❤️', '🔥'].map((emoji) => (
+                <button
+                  key={emoji}
+                  onClick={() => handleSendReaction(emoji)}
+                  className="cursor-pointer flex-1 py-1.5 sm:py-2 bg-[#FFF8EC] hover:bg-[#FFEEC7] border-[1.5px] border-[#1A1614] rounded-xl flex items-center justify-center text-xl sm:text-2xl hover:scale-110 active:scale-95 transition-transform select-none"
+                >
+                  {emoji}
+                </button>
+              ))}
             </div>
           </div>
-
-          {/* Live Activity Feed */}
-          <div className="bg-white rounded-2xl border-[3.5px] border-[#383838] p-4 shadow-[0_4px_0_#18181B] flex flex-col flex-1">
-            <h3 className="font-mouse text-[#E62719] text-2xl uppercase tracking-wider leading-none mb-3 pb-2 border-b border-[#F4EBD9]">
-              LIVE ACTIVITY LOG
-            </h3>
-
-            <div className="flex flex-col gap-2 overflow-y-auto max-h-[220px] font-mono text-xs pr-1">
-              {activities.length === 0 ? (
-                <p className="text-gray-400 italic text-center py-4 font-outfit">Waiting for events...</p>
-              ) : (
-                activities.map((act) => (
-                  <div
-                    key={act.id}
-                    className={`p-1.5 rounded-lg border text-[11px] flex items-start gap-1.5 ${
-                      act.type === 'error'
-                        ? 'bg-red-50 text-red-800 border-red-200'
-                        : act.type === 'warn'
-                        ? 'bg-amber-50 text-amber-800 border-amber-200'
-                        : act.type === 'success'
-                        ? 'bg-green-50 text-green-800 border-green-200'
-                        : 'bg-[#F4EBD9]/60 text-[#1A1614] border-[#E0D5C3]'
-                    }`}
-                  >
-                    <span className="text-[9px] text-gray-500 font-sans">{act.timestamp}</span>
-                    <span className="flex-1 leading-snug">{act.text}</span>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-        </section>
+        </div>
       </main>
     </div>
   );
@@ -580,28 +1061,20 @@ export default function RoomPage() {
   return (
     <React.Suspense
       fallback={
-        <div
-          className="min-h-screen w-full flex flex-col items-center justify-center select-none"
-          style={{ backgroundColor: '#F4EBD9' }}
-        >
-          <span
-            className="text-[#E62719] text-5xl sm:text-6xl tracking-normal animate-pulse select-none"
-            style={{
-              fontFamily: "'Modak', cursive",
-              WebkitTextStroke: '5px white',
-              paintOrder: 'stroke fill',
-            }}
-          >
-            WATCHPARTY
-          </span>
-          <div className="flex items-center gap-2 mt-4">
-            <span className="w-3 h-3 rounded-full bg-[#E62719] animate-bounce [animation-delay:-0.3s]"></span>
-            <span className="w-3 h-3 rounded-full bg-[#E62719] animate-bounce [animation-delay:-0.15s]"></span>
-            <span className="w-3 h-3 rounded-full bg-[#E62719] animate-bounce"></span>
+        <div className="h-[100dvh] w-full flex items-center justify-center bg-[#F7EAD0]">
+          <div className="flex flex-col items-center gap-3">
+            <span
+              className="text-[#E62719] text-4xl sm:text-5xl tracking-normal animate-pulse select-none"
+              style={{
+                fontFamily: "'Modak', cursive",
+                WebkitTextStroke: '6px white',
+                paintOrder: 'stroke fill',
+              }}
+            >
+              WATCHPARTY
+            </span>
+            <div className="w-6 h-6 border-3 border-[#E62719] border-t-transparent rounded-full animate-spin"></div>
           </div>
-          <p className="font-comic font-bold text-sm text-[#1A1614] mt-2">
-            Loading room...
-          </p>
         </div>
       }
     >

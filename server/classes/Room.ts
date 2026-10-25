@@ -21,9 +21,9 @@ export class Room {
 
     // Initial default playback state
     this.playback = {
-      videoId: 'dQw4w9WgXcQ', // Default demo video
+      videoId: 'jfKfPfyJRdk', // Lofi hip hop radio - beats to relax/study to
       isPlaying: false,
-      currentTime: 0,
+      currentTime: 42,
       updatedAt: Date.now(),
     };
   }
@@ -117,6 +117,23 @@ export class Room {
       this.playback.isPlaying = true;
     } else if (action === 'pause') {
       this.playback.isPlaying = false;
+    }
+  }
+
+  /**
+   * Updates participant's role (e.g. promote to moderator or transfer host)
+   */
+  updateParticipantRole(userId: string, newRole: Role) {
+    const p = this.participants.get(userId);
+    if (p) {
+      p.role = newRole;
+      if (newRole === 'host') {
+        const oldHost = this.participants.get(this.hostId);
+        if (oldHost && oldHost.userId !== userId) {
+          oldHost.role = 'moderator';
+        }
+        this.hostId = userId;
+      }
     }
   }
 

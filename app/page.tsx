@@ -387,19 +387,18 @@ export default function LandingPage() {
 
   return (
     <div
-      className="relative w-full h-screen max-h-screen flex flex-col justify-between overflow-hidden selection:bg-red-500 selection:text-white"
-      style={{ backgroundColor: '#F4EBD9' }}
+      className="relative w-full h-[100dvh] h-screen flex flex-col overflow-hidden selection:bg-red-500 selection:text-white"
+      style={{ backgroundColor: '#F7EAD0' }}
     >
       {/* Page Loader */}
       <div
-        className={`fixed inset-0 z-[999] flex flex-col items-center justify-center transition-opacity duration-300 ease-out select-none ${
-          isLoading ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
-        }`}
-        style={{ backgroundColor: '#F4EBD9' }}
+        className={`fixed inset-0 z-[999] flex flex-col items-center justify-center transition-opacity duration-300 ease-out select-none ${isLoading ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
+          }`}
+        style={{ backgroundColor: '#F7EAD0' }}
       >
         <div className="flex flex-col items-center gap-4">
           <span
-            className="text-[#E62719] text-6xl sm:text-7xl tracking-normal animate-pulse select-none"
+            className="text-[#E62719] text-4xl xs:text-5xl sm:text-6xl md:text-7xl tracking-normal animate-pulse select-none"
             style={{
               fontFamily: "'Modak', cursive",
               WebkitTextStroke: '6px white',
@@ -423,41 +422,38 @@ export default function LandingPage() {
         </div>
       )}
 
-      {/* Bottom-left Character Illustration - visible on 2xl (1536px+) to prevent collisions on laptops & phones */}
-      <div className={`hidden 2xl:block absolute bottom-0 left-0 z-10 pointer-events-none select-none ${
-        contentReady ? 'animate-pop-left' : 'opacity-0'
-      }`}>
+      {/* Bottom-left Character Illustration - visible on all screens */}
+      <div className={`absolute bottom-0 left-0 z-10 pointer-events-none select-none ${contentReady ? 'animate-pop-left' : 'opacity-0'
+        }`}>
         <img
           src="/pic1.webp"
           alt="Watching party illustration"
-          className="w-[500px] 2xl:w-[580px] h-auto object-contain -ml-12 -mb-15 rotate-[-2deg] origin-bottom-left"
+          className="w-[140px] xs:w-[180px] sm:w-[240px] md:w-[320px] lg:w-[400px] xl:w-[480px] 2xl:w-[560px] h-auto object-contain -ml-4 xs:-ml-6 sm:-ml-8 md:-ml-10 lg:-ml-12 -mb-4 xs:-mb-6 sm:-mb-8 md:-mb-10 lg:-mb-12 rotate-[-2deg] origin-bottom-left"
         />
       </div>
 
-      {/* Bottom-right Character Illustration - visible on 2xl (1536px+) to prevent collisions on laptops & phones */}
-      <div className={`hidden 2xl:block absolute bottom-0 -right-8 z-10 pointer-events-none select-none ${
-        contentReady ? 'animate-pop-right' : 'opacity-0'
-      }`}>
+      {/* Bottom-right Character Illustration - visible on all screens */}
+      <div className={`absolute bottom-0 -right-2 xs:-right-4 sm:-right-6 md:-right-8 z-10 pointer-events-none select-none ${contentReady ? 'animate-pop-right' : 'opacity-0'
+        }`}>
         <img
           src="/pic2.webp"
           alt="Watching party ghost illustration"
-          className="w-[500px] 2xl:w-[580px] h-auto object-contain -mr-12 -mb-15 rotate-[2deg] origin-bottom-right"
+          className="w-[140px] xs:w-[180px] sm:w-[240px] md:w-[320px] lg:w-[400px] xl:w-[480px] 2xl:w-[560px] h-auto object-contain -mr-4 xs:-mr-6 sm:-mr-8 md:-mr-10 lg:-mr-12 -mb-4 xs:-mb-6 sm:-mb-8 md:-mb-10 lg:-mb-12 rotate-[2deg] origin-bottom-right"
         />
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
           1. TOP NAVIGATION
           ══════════════════════════════════════════════════════════════════════ */}
-      <nav className="relative z-30 flex items-center justify-between px-6 sm:px-10 pt-4 pb-1 flex-shrink-0">
+      <nav className="relative z-30 flex items-center justify-between px-4 sm:px-6 md:px-10 pt-2 sm:pt-3 md:pt-4 pb-0 sm:pb-1 flex-shrink-0 gap-2">
         {/* LOGO: Modak font in red */}
         <button
           onClick={() => router.push('/')}
-          className={`cursor-pointer hover:opacity-90 active:scale-95 text-left ${
-            navReady ? 'animate-drop-bounce' : 'opacity-0 pointer-events-none'
-          }`}
+          className={`cursor-pointer hover:opacity-90 active:scale-95 text-left flex-shrink-0 ${navReady ? 'animate-drop-bounce' : 'opacity-0 pointer-events-none'
+            }`}
         >
           <span
-            className="text-[#E62719] text-5xl sm:text-6xl tracking-normal select-none"
+            className="text-[#E62719] text-3xl xs:text-4xl sm:text-5xl md:text-6xl tracking-normal select-none"
             style={{
               fontFamily: "'Modak', cursive",
               lineHeight: 1,
@@ -475,11 +471,10 @@ export default function LandingPage() {
             setIsCreateModalOpen(true);
             setCreateError(null);
           }}
-          className={`cursor-pointer bg-[#E62719] hover:bg-[#D41E11] text-white px-5 sm:px-6 py-2 sm:py-2.5 rounded-full font-modak text-base sm:text-lg tracking-wider border-[2.5px] border-[#18181B] shadow-[0_4px_0_#18181B] active:translate-y-[3px] active:shadow-[0_1px_0_#18181B] select-none flex items-center gap-1.5 sm:gap-2 ${
-            navReady ? 'animate-drop-bounce-delay' : 'opacity-0 pointer-events-none'
-          }`}
+          className={`cursor-pointer bg-[#E62719] hover:bg-[#D41E11] text-white px-3 xs:px-4 sm:px-5 md:px-6 py-1.5 xs:py-2 sm:py-2.5 rounded-full font-modak text-xs xs:text-sm sm:text-base md:text-lg tracking-wider border-[2.5px] border-[#18181B] shadow-[0_4px_0_#18181B] active:translate-y-[3px] active:shadow-[0_1px_0_#18181B] select-none flex items-center gap-1 xs:gap-1.5 sm:gap-2 flex-shrink-0 whitespace-nowrap ${navReady ? 'animate-drop-bounce-delay' : 'opacity-0 pointer-events-none'
+            }`}
         >
-          <span className="text-xl sm:text-2xl leading-none font-bold select-none">+</span>
+          <span className="text-base xs:text-lg sm:text-xl md:text-2xl leading-none font-bold select-none">+</span>
           <span>CREATE ROOM</span>
         </button>
       </nav>
@@ -489,11 +484,11 @@ export default function LandingPage() {
           ══════════════════════════════════════════════════════════════════════ */}
       <div
         ref={headlineContainerRef}
-        className="relative z-10 flex flex-col items-center justify-center flex-shrink-0 px-4 pt-1 pb-2"
+        className="relative z-10 flex flex-col items-center justify-center flex-shrink min-h-0 px-2 sm:px-4 pt-0 pb-0"
         style={{ opacity: 0 }}
       >
         {/* "WATCH YOUTUBE" — SVG textPath arch for mathematically even curve */}
-        <div className="w-full max-w-[1060px] mx-auto select-none px-2" aria-label="WATCH YOUTUBE" style={{ marginBottom: '-1.5rem' }}>
+        <div className="w-full max-w-[320px] xs:max-w-[420px] sm:max-w-[600px] md:max-w-[800px] lg:max-w-[960px] xl:max-w-[1060px] mx-auto select-none px-1 sm:px-2" aria-label="WATCH YOUTUBE" style={{ marginBottom: '-1rem' }}>
           <svg
             viewBox="0 0 1300 270"
             className="w-full h-auto"
@@ -543,7 +538,7 @@ export default function LandingPage() {
         </div>
 
         {/* "TOGETHER, IN SYNC." */}
-        <div className="relative -mt-2 sm:-mt-1 md:-mt-2 lg:-mt-20 w-full max-w-[740px] mx-auto flex flex-col items-center select-none z-20">
+        <div className="relative -mt-1 sm:-mt-2 md:-mt-4 lg:-mt-12 xl:-mt-20 w-full max-w-[240px] xs:max-w-[320px] sm:max-w-[440px] md:max-w-[580px] lg:max-w-[680px] xl:max-w-[740px] mx-auto flex flex-col items-center select-none z-20">
           <svg
             viewBox="0 0 1000 145"
             className="w-full h-auto"
@@ -580,7 +575,7 @@ export default function LandingPage() {
           </svg>
 
           {/* Hand-drawn red scribble underline */}
-          <div className="w-[85%] sm:w-[92%] -mt-10 sm:-mt-11">
+          <div className="w-[80%] xs:w-[85%] sm:w-[88%] md:w-[90%] lg:w-[92%] -mt-4 xs:-mt-5 sm:-mt-7 md:-mt-9 lg:-mt-10 xl:-mt-11">
             <ScribbleUnderline />
           </div>
         </div>
@@ -589,15 +584,13 @@ export default function LandingPage() {
       {/* ══════════════════════════════════════════════════════════════════════
           3. MAIN INTERACTION STAGE
           ══════════════════════════════════════════════════════════════════════ */}
-      <div className={`relative flex items-center justify-center flex-1 w-full max-w-[1400px] mx-auto px-4 ${
-        contentReady ? 'animate-fade-rise' : 'opacity-0 pointer-events-none'
-      }`}>
+      <div className={`relative flex items-center justify-center flex-1 min-h-0 w-full max-w-[1400px] mx-auto px-3 sm:px-4 ${contentReady ? 'animate-fade-rise' : 'opacity-0 pointer-events-none'
+        }`}>
 
         {/* ── CENTRAL JOIN ROOM CARD WITH FLANKING ANNOTATIONS ── */}
         <div className="relative flex items-center justify-center w-full">
           <div
-            className="relative flex items-center justify-center w-full max-w-[360px] z-10"
-            style={{ transform: 'translateY(-14px)' }}
+            className="relative flex items-center justify-center w-full max-w-[320px] sm:max-w-[340px] md:max-w-[360px] z-10"
           >
 
             {/* ── LEFT ANNOTATION: "DISTANCE FEELS CLOSER" (hidden on mobile/tablet to avoid overflow) ── */}
@@ -642,23 +635,31 @@ export default function LandingPage() {
 
             {/* CARD: JOIN A ROOM (Centered) */}
             <div
-              className="w-full bg-white rounded-[26px] border-[4.5px] border-[#383838] p-5 sm:p-6 flex flex-col shadow-[0_6px_24px_rgba(0,0,0,0.08)] hover:shadow-[0_10px_30px_rgba(0,0,0,0.12)] transition-all"
+              className="w-full bg-white rounded-[20px] sm:rounded-[24px] md:rounded-[26px] border-[1.5px] border-black p-4 sm:p-5 md:p-6 flex flex-col shadow-[0_6px_24px_rgba(0,0,0,0.08)] hover:shadow-[0_10px_30px_rgba(0,0,0,0.12)] transition-all"
             >
               <div>
                 {/* Title */}
-                <div className="flex items-center justify-center mb-3">
+                <div className="flex items-center justify-center mb-2 sm:mb-3">
                   <h3
-                    className="font-mouse text-[#E62719] text-3xl sm:text-4xl lg:text-[46px] uppercase tracking-wider leading-none select-none text-center"
+                    className="font-mouse text-[#E62719] text-2xl xs:text-3xl sm:text-4xl lg:text-[46px] uppercase tracking-wider leading-none select-none text-center"
                   >
                     JOIN A ROOM
                   </h3>
                 </div>
 
-                <form onSubmit={handleJoin} className="flex flex-col gap-3">
+                <form onSubmit={handleJoin} className="flex flex-col gap-2 sm:gap-3">
                   <div>
-                    <label className="block text-xs sm:text-sm font-bold text-[#1A1614] mb-1.5 font-outfit">
-                      Your name
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs sm:text-sm font-bold text-[#1A1614] font-outfit">
+                        Your name
+                      </label>
+                      {joinNameError && (
+                        <span className="text-[11px] sm:text-xs font-bold text-[#E62719] flex items-center gap-1 font-outfit leading-none">
+                          <span>⚠️</span>
+                          <span>{joinNameError}</span>
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="text"
                       value={joinName}
@@ -667,22 +668,24 @@ export default function LandingPage() {
                         if (joinNameError) setJoinNameError(null);
                       }}
                       placeholder="Enter your name"
-                      className={`w-full px-4 py-2.5 sm:py-2.5 bg-[#F4EBD9] border-[1.5px] ${
-                        joinNameError ? 'border-[#E62719] ring-2 ring-[#E62719]/20' : 'border-[#D8CBB8]'
-                      } rounded-xl text-sm font-outfit text-[#1A1614] placeholder:text-[#64594A] focus:outline-none focus:border-[#E62719] focus:bg-white transition`}
+                      className={`w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-[#F4EBD9] border ${
+                        joinNameError ? 'border-[#E62719] ring-2 ring-[#E62719]/20' : 'border-black'
+                      } rounded-lg sm:rounded-xl text-sm font-outfit text-[#1A1614] placeholder:text-[#64594A] focus:outline-none focus:border-black focus:ring-1 focus:ring-black focus:bg-white transition`}
                     />
-                    {joinNameError && (
-                      <p className="mt-1 text-xs font-bold text-[#E62719] flex items-center gap-1 font-outfit">
-                        <span>⚠️</span>
-                        <span>{joinNameError}</span>
-                      </p>
-                    )}
                   </div>
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-bold text-[#1A1614] mb-1.5 font-outfit">
-                      Room code
-                    </label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs sm:text-sm font-bold text-[#1A1614] font-outfit">
+                        Room code
+                      </label>
+                      {joinCodeError && (
+                        <span className="text-[11px] sm:text-xs font-bold text-[#E62719] flex items-center gap-1 font-outfit leading-none">
+                          <span>⚠️</span>
+                          <span>{joinCodeError}</span>
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="text"
                       value={joinCode}
@@ -693,22 +696,16 @@ export default function LandingPage() {
                         if (joinCodeError) setJoinCodeError(null);
                       }}
                       placeholder="Enter 6-char code"
-                      className={`w-full px-4 py-2.5 sm:py-2.5 bg-[#F4EBD9] border-[1.5px] ${
-                        joinCodeError ? 'border-[#E62719] ring-2 ring-[#E62719]/20' : 'border-[#D8CBB8]'
-                      } rounded-xl text-sm font-outfit font-mono uppercase tracking-widest text-[#1A1614] placeholder:text-[#64594A] placeholder:tracking-normal focus:outline-none focus:border-[#E62719] focus:bg-white transition`}
+                      className={`w-full px-3 sm:px-4 py-2 sm:py-2.5 bg-[#F4EBD9] border ${
+                        joinCodeError ? 'border-[#E62719] ring-2 ring-[#E62719]/20' : 'border-black'
+                      } rounded-lg sm:rounded-xl text-sm font-outfit font-mono uppercase tracking-widest text-[#1A1614] placeholder:text-[#64594A] placeholder:tracking-normal focus:outline-none focus:border-black focus:ring-1 focus:ring-black focus:bg-white transition`}
                     />
-                    {joinCodeError && (
-                      <p className="mt-1 text-xs font-bold text-[#E62719] flex items-center gap-1 font-outfit">
-                        <span>⚠️</span>
-                        <span>{joinCodeError}</span>
-                      </p>
-                    )}
                   </div>
 
                   <button
                     type="submit"
                     disabled={isJoining}
-                    className="w-full mt-2 cursor-pointer bg-[#E62719] hover:bg-[#D41E11] text-white rounded-full py-3 sm:py-3.5 px-4 font-modak text-xl sm:text-2xl tracking-wider border-[2.5px] border-[#18181B] shadow-[0_5px_0_#18181B] active:translate-y-[4px] active:shadow-[0_1px_0_#18181B] disabled:opacity-60 disabled:cursor-not-allowed disabled:active:translate-y-0 disabled:active:shadow-[0_5px_0_#18181B] transition-all flex items-center justify-center gap-2 select-none"
+                    className="w-full mt-1 cursor-pointer bg-[#E62719] hover:bg-[#D41E11] text-white rounded-full py-2.5 sm:py-3 md:py-3.5 px-4 font-modak text-lg sm:text-xl md:text-2xl tracking-wider border-[2.5px] border-[#18181B] shadow-[0_5px_0_#18181B] active:translate-y-[4px] active:shadow-[0_1px_0_#18181B] disabled:opacity-60 disabled:cursor-not-allowed disabled:active:translate-y-0 disabled:active:shadow-[0_5px_0_#18181B] transition-all flex items-center justify-center gap-2 select-none"
                   >
                     {isJoining ? (
                       <>
@@ -727,14 +724,18 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          4. FOOTER
-          ══════════════════════════════════════════════════════════════════════ */}
-      <footer className={`relative z-20 flex flex-col items-center justify-center pb-3 flex-shrink-0 select-none ${
-        contentReady ? 'animate-fade-rise' : 'opacity-0 pointer-events-none'
-      }`}>
-        <p className="font-comic font-bold text-xs sm:text-[13px] text-[#7A6E60] tracking-tight leading-none text-center">
-          Watch YouTube together in perfect sync with friends.
+      {/* 4. FOOTER */}
+      <footer className={`relative z-30 flex flex-col items-center justify-center pb-2 sm:pb-3 md:pb-4 pt-1 sm:pt-2 flex-shrink-0 select-none ${contentReady ? 'animate-fade-rise' : 'opacity-0 pointer-events-none'
+        }`}>
+        <div className="flex items-center gap-1.5 sm:gap-2 md:gap-2.5">
+          <span className="hidden xs:inline-flex"><HostDashesLeft /></span>
+          <p className="font-comic font-bold text-xs sm:text-sm md:text-base text-[#1A1614] leading-none tracking-tight">
+            Watch YouTube together in sync.
+          </p>
+          <span className="hidden xs:inline-flex"><HostDashesRight /></span>
+        </div>
+        <p className="font-comic font-bold text-[11px] sm:text-xs md:text-[13px] text-[#7A6E60] mt-1 sm:mt-1.5 tracking-tight leading-none text-center">
+          Share the fun with all your friends.
         </p>
       </footer>
 
@@ -750,7 +751,7 @@ export default function LandingPage() {
           }}
         >
           <div
-            className="relative w-full max-w-[370px] bg-white rounded-[28px] border-[4.5px] border-[#383838] p-6 shadow-[0_16px_48px_rgba(0,0,0,0.25)] select-none"
+            className="relative w-full max-w-[340px] sm:max-w-[370px] bg-white rounded-[22px] sm:rounded-[28px] border-[3.5px] sm:border-[4.5px] border-[#383838] p-4 sm:p-6 shadow-[0_16px_48px_rgba(0,0,0,0.25)] select-none"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Close Button */}
@@ -775,9 +776,17 @@ export default function LandingPage() {
             {/* Modal Form */}
             <form onSubmit={handleCreate} className="flex flex-col gap-4">
               <div>
-                <label className="block text-xs sm:text-sm font-bold text-[#1A1614] mb-1.5 font-outfit">
-                  Your name
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="text-xs sm:text-sm font-bold text-[#1A1614] font-outfit">
+                    Your name
+                  </label>
+                  {createError && (
+                    <span className="text-[11px] sm:text-xs font-bold text-[#E62719] flex items-center gap-1 font-outfit leading-none">
+                      <span>⚠️</span>
+                      <span>{createError}</span>
+                    </span>
+                  )}
+                </div>
                 <input
                   ref={nameInputRef}
                   type="text"
@@ -788,16 +797,10 @@ export default function LandingPage() {
                   }}
                   placeholder="Enter your name"
                   autoFocus
-                  className={`w-full px-4 py-2.5 bg-[#F4EBD9] border-[1.5px] ${
-                    createError ? 'border-[#E62719] ring-2 ring-[#E62719]/20' : 'border-[#D8CBB8]'
-                  } rounded-xl text-sm font-outfit text-[#1A1614] placeholder:text-[#64594A] focus:outline-none focus:border-[#E62719] focus:bg-white transition`}
+                  className={`w-full px-4 py-2.5 bg-[#F4EBD9] border ${
+                    createError ? 'border-[#E62719] ring-2 ring-[#E62719]/20' : 'border-black'
+                  } rounded-xl text-sm font-outfit text-[#1A1614] placeholder:text-[#64594A] focus:outline-none focus:border-black focus:ring-1 focus:ring-black focus:bg-white transition`}
                 />
-                {createError && (
-                  <p className="mt-1 text-xs font-bold text-[#E62719] flex items-center gap-1 font-outfit">
-                    <span>⚠️</span>
-                    <span>{createError}</span>
-                  </p>
-                )}
               </div>
 
               {/* Host note: moved into Create Modal */}
