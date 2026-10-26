@@ -231,13 +231,16 @@ export class MessageHandler {
         sessionToken: token,
       });
 
-      // Broadcast user_joined as per specification
-      room.broadcast(this.io, 'user_joined', {
-        username: participant.username,
-        userId: participant.userId,
-        role: participant.role,
-        participants: room.getParticipantsData(true),
-      });
+      // Broadcast user_joined (toast + list). A reconnect inside the grace window
+      // (page refresh) is not a new join, so the room is only sent the fresh sync_state.
+      if (!isReconnect) {
+        room.broadcast(this.io, 'user_joined', {
+          username: participant.username,
+          userId: participant.userId,
+          role: participant.role,
+          participants: room.getParticipantsData(true),
+        });
+      }
 
       room.broadcastSyncState(this.io);
 
@@ -568,12 +571,18 @@ export class MessageHandler {
         return;
       }
 
-      if (!targetUserId || !newRole || !['host', 'moderator', 'participant'].includes(newRole)) {
+      if (!targetUserId || !newRole || !['host', 'moderator', 'participant', 'viewer'].includes(newRole)) {
         if (typeof callback === 'function') callback({ success: false, error: 'Invalid target user or role' });
         return;
       }
 
-      // Host cannot change their own role here (use transfer_host instead)
+      // If new role is host, delegate to handleTransferHost so ownership and DB are fully updated
+      if (newRole === 'host') {
+        this.handleTransferHost({ userId: targetUserId }, callback);
+        return;
+      }
+
+      // Host cannot change their own role here
       if (targetUserId === hostUserId) {
         if (typeof callback === 'function') callback({ success: false, error: 'Cannot modify your own role' });
         return;
@@ -600,13 +609,14 @@ export class MessageHandler {
 
       room.updateParticipantRole(targetUserId, newRole);
 
-      // Persist role change to DB
-      updateParticipantRoleInDb(roomCode, targetUserId, newRole);
+      // Persist role change to DB (map viewer to participant in DB schema)
+      updateParticipantRoleInDb(roomCode, targetUserId, newRole === 'viewer' ? 'participant' : newRole);
 
       room.broadcast(this.io, 'role_assigned', {
         userId: targetUserId,
         username: targetParticipant.username,
         role: newRole,
+        hostId: room.hostId,
         participants: room.getParticipantsData(true),
       });
 
@@ -621,8 +631,8 @@ export class MessageHandler {
   // ─── 8B. TRANSFER HOST (Host only) ─────────────────────────────────────────
   private handleTransferHost(data: any, callback?: (res: any) => void): void {
     try {
-      const roomCode = this.socket.data.roomCode;
-      const hostUserId = this.socket.data.userId;
+      const roomCode = cleanRoomCode(this.socket.data.roomCode || data?.roomCode || data?.roomId);
+      const hostUserId = this.socket.data.userId || data?.hostId || data?.myUserId;
       const targetUserId = sanitize(data?.userId || data?.targetUserId, 50);
 
       if (!roomCode || !hostUserId || !targetUserId) {
@@ -642,7 +652,8 @@ export class MessageHandler {
       }
 
       const hostParticipant = room.getParticipant(hostUserId);
-      if (!hostParticipant || !canPerform(hostParticipant.role, 'transfer_host')) {
+      const isHost = room.hostId === hostUserId || (hostParticipant && canPerform(hostParticipant.role, 'transfer_host'));
+      if (!isHost) {
         this.socket.emit('permission_denied', { message: 'Only host can transfer host ownership' });
         if (typeof callback === 'function') callback({ success: false, error: 'Permission denied' });
         return;
@@ -655,7 +666,9 @@ export class MessageHandler {
       }
 
       // Demote old host to moderator, promote target to host
-      hostParticipant.role = 'moderator';
+      if (hostParticipant) {
+        hostParticipant.role = 'moderator';
+      }
       targetParticipant.role = 'host';
       room.hostId = targetUserId;
       room.cancelHostGraceTimeout();
@@ -669,6 +682,7 @@ export class MessageHandler {
         userId: targetUserId,
         username: targetParticipant.username,
         role: 'host',
+        hostId: targetUserId,
         participants: room.getParticipantsData(true),
       });
 
@@ -683,8 +697,8 @@ export class MessageHandler {
   // ─── 9. REMOVE PARTICIPANT (Host only) ─────────────────────────────────────
   private handleRemoveParticipant(data: any, callback?: (res: any) => void): void {
     try {
-      const roomCode = this.socket.data.roomCode;
-      const hostUserId = this.socket.data.userId;
+      const roomCode = cleanRoomCode(this.socket.data.roomCode || data?.roomCode || data?.roomId);
+      const hostUserId = this.socket.data.userId || data?.hostId || data?.myUserId;
       const targetUserId = sanitize(data?.userId || data?.targetUserId, 50);
 
       if (!roomCode || !hostUserId || !targetUserId) {
@@ -705,7 +719,8 @@ export class MessageHandler {
       }
 
       const hostParticipant = room.getParticipant(hostUserId);
-      if (!hostParticipant || !canPerform(hostParticipant.role, 'remove_participant')) {
+      const isHost = room.hostId === hostUserId || (hostParticipant && canPerform(hostParticipant.role, 'remove_participant'));
+      if (!isHost) {
         this.socket.emit('permission_denied', { message: 'Only host can remove participants' });
         if (typeof callback === 'function') callback({ success: false, error: 'Permission denied' });
         return;
@@ -977,7 +992,10 @@ export class MessageHandler {
       if (!roomCode || !userId) return;
 
       const room = this.roomManager.getRoom(roomCode);
-      if (!room || room.hostId !== userId) return;
+      if (!room) return;
+
+      const participant = room.getParticipant(userId);
+      if (!participant || (participant.role !== 'host' && participant.role !== 'moderator')) return;
 
       const time = data?.time;
       if (typeof time === 'number' && Number.isFinite(time) && time >= 0) {
@@ -1005,14 +1023,27 @@ export class MessageHandler {
       if (room) {
         const participant = room.getParticipant(userId);
         if (participant && participant.socketId === this.socket.id) {
-          // Marks participant offline, starts 15-second host grace period
-          room.handleDisconnect(userId, this.io);
-
-          room.broadcast(this.io, 'user_left', {
-            username: participant.username,
-            userId,
-            participants: room.getParticipantsData(true),
+          // Marks participant offline but keeps their seat: a refresh reconnects within
+          // seconds and keeps its role. The host gets 15s before re-election, everyone
+          // is removed for good after 30s (see Room.handleDisconnect).
+          room.handleDisconnect(userId, this.io, {
+            onHostElected: (newHost, oldHost) => {
+              updateParticipantRoleInDb(roomCode, newHost.userId, 'host');
+              updateParticipantRoleInDb(roomCode, oldHost.userId, 'participant');
+              syncRoomToDb({ roomCode, hostId: newHost.userId });
+            },
+            onPurged: (gone) => {
+              deleteParticipantFromDb(roomCode, gone.userId);
+              room.broadcast(this.io, 'user_left', {
+                username: gone.username,
+                userId: gone.userId,
+                participants: room.getParticipantsData(true),
+              });
+            },
           });
+
+          // Drop them from everyone's list right away; the "left" toast only
+          // fires if they do not come back (onPurged above).
           room.broadcastSyncState(this.io);
 
           endUserSession(roomCode, userId, this.socket.id);

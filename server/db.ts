@@ -155,7 +155,7 @@ export async function recordUserSession(sessionData: {
   username: string;
   roomCode: string;
   socketId?: string;
-  role?: 'host' | 'moderator' | 'participant';
+  role?: 'host' | 'moderator' | 'participant' | 'viewer';
   userAgent?: string;
   activeCount?: number;
 }): Promise<void> {
@@ -189,6 +189,9 @@ export async function recordUserSession(sessionData: {
         },
       });
 
+      const dbRole: 'host' | 'moderator' | 'participant' =
+        sessionData.role === 'viewer' ? 'participant' : (sessionData.role || 'participant');
+
       // 1. Upsert active participant
       await prisma.participant.upsert({
         where: {
@@ -199,14 +202,14 @@ export async function recordUserSession(sessionData: {
         },
         update: {
           username: sessionData.username,
-          role: sessionData.role || 'participant',
+          role: dbRole,
           isOnline: true,
         },
         create: {
           roomCode: sessionData.roomCode,
           userId: sessionData.userId,
           username: sessionData.username,
-          role: sessionData.role || 'participant',
+          role: dbRole,
           isOnline: true,
         },
       });
@@ -233,7 +236,7 @@ export async function recordUserSession(sessionData: {
             data: {
               isOnline: true,
               lastSeenAt: new Date(),
-              role: sessionData.role || 'participant',
+              role: dbRole,
               username: sessionData.username,
             },
           });
@@ -244,7 +247,7 @@ export async function recordUserSession(sessionData: {
               username: sessionData.username,
               roomCode: sessionData.roomCode,
               socketId: sessionData.socketId,
-              role: sessionData.role || 'participant',
+              role: dbRole,
               isOnline: true,
               userAgent: sessionData.userAgent || null,
             },
@@ -298,17 +301,18 @@ export async function recordUserSession(sessionData: {
 export async function updateParticipantRoleInDb(
   roomCode: string,
   userId: string,
-  role: 'host' | 'moderator' | 'participant'
+  role: 'host' | 'moderator' | 'participant' | 'viewer'
 ): Promise<void> {
   if (!process.env.DATABASE_URL || !prisma) return;
   try {
+    const dbRole = role === 'viewer' ? 'participant' : role;
     await prisma.participant.updateMany({
       where: { roomCode, userId },
-      data: { role },
+      data: { role: dbRole },
     });
     await prisma.userSession.updateMany({
       where: { roomCode, userId, isOnline: true },
-      data: { role },
+      data: { role: dbRole },
     });
   } catch (err: any) {
     console.warn(`[DB Warning] Failed to update role for ${userId}:`, err.message);

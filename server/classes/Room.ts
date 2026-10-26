@@ -13,6 +13,9 @@ export interface ActionRequestItem {
 }
 
 export class Room {
+  static readonly HOST_GRACE_MS = 15_000; // host may be offline this long (refresh) before re-election
+  static readonly PURGE_MS = 30_000; // offline participants are removed after this long
+
   public roomCode: string;
   public hostId: string;
   public participants: Map<string, Participant>; // Keyed by stable userId
@@ -136,7 +139,12 @@ export class Room {
     const currentHost = this.participants.get(this.hostId);
     let role: Role = 'participant';
 
-    if (this.participants.size === 0 || !currentHost || !currentHost.isOnline) {
+    // A host that is merely offline inside its grace window (e.g. refreshing the page)
+    // keeps the role, so a newcomer must not steal it. Only take over when there is no
+    // host record at all, or the host is offline and the grace window has already expired.
+    const hostIsGone = !currentHost || (!currentHost.isOnline && !this.hostGraceTimeout);
+
+    if (this.participants.size === 0 || hostIsGone) {
       // Elect as host if no host or host is gone
       role = 'host';
       if (currentHost && currentHost.userId !== userId) {
@@ -152,25 +160,49 @@ export class Room {
   }
 
   /**
-   * Network disconnect (browser tab closed, back button, or network loss).
-   * Immediately treats user as left and elects next host if host disconnected.
+   * Network disconnect (page refresh, tab closed, or network loss).
+   * The participant is marked offline but kept, so a quick reconnect (a refresh) restores
+   * them with the same role:
+   *  - host: HOST_GRACE_MS before the next host is elected
+   *  - everyone: PURGE_MS before the record is removed for good
+   * Explicit "Leave" clicks do not come through here (see handleExplicitLeave).
    */
-  handleDisconnect(userId: string, io: Server): Participant | undefined {
+  handleDisconnect(
+    userId: string,
+    io: Server,
+    callbacks: {
+      onHostElected?: (newHost: Participant, oldHost: Participant) => void;
+      onPurged?: (participant: Participant) => void;
+    } = {}
+  ): Participant | undefined {
     const participant = this.participants.get(userId);
     if (!participant) return undefined;
 
     participant.isOnline = false;
     this.cancelDisconnectPurge(userId);
 
-    // If host disconnects, elect next active host immediately
     if (userId === this.hostId) {
       this.cancelHostGraceTimeout();
-      this.electNextHost(io, userId);
+      this.hostGraceTimeout = setTimeout(() => {
+        this.hostGraceTimeout = null;
+        const host = this.participants.get(this.hostId);
+        // Still gone after the grace window -> hand over to the next online member
+        if (host && !host.isOnline && host.userId === userId) {
+          const next = this.electNextHost(io, host.userId);
+          if (next) callbacks.onHostElected?.(next, host);
+        }
+      }, Room.HOST_GRACE_MS);
     }
 
-    // Immediately remove offline participant so other tabs see them leave right away
-    this.participants.delete(userId);
-    this.sessionTokens.delete(userId);
+    const purge = setTimeout(() => {
+      this.disconnectPurgeTimeouts.delete(userId);
+      const p = this.participants.get(userId);
+      if (!p || p.isOnline) return; // came back in time
+      this.participants.delete(userId);
+      this.sessionTokens.delete(userId);
+      callbacks.onPurged?.(p);
+    }, Room.PURGE_MS);
+    this.disconnectPurgeTimeouts.set(userId, purge);
 
     return participant;
   }

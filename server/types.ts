@@ -1,4 +1,4 @@
-export type Role = 'host' | 'moderator' | 'participant';
+export type Role = 'host' | 'moderator' | 'participant' | 'viewer';
 
 export type VideoAction = 'play' | 'pause' | 'seek' | 'change_video';
 

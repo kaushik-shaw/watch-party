@@ -19,6 +19,7 @@ export const ROLE_PERMISSIONS: Record<Role, readonly RoomAction[]> = {
   ],
   moderator: ['play', 'pause', 'seek', 'change_video', 'resolve_request'],
   participant: [],
+  viewer: [],
 } as const;
 
 /**

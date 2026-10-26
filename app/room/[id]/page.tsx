@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useParams, useSearchParams, useRouter } from 'next/navigation';
 import { io, Socket } from 'socket.io-client';
 import { UserAvatar } from './avatars';
@@ -23,7 +24,7 @@ declare global {
 interface Participant {
   userId: string;
   username: string;
-  role: 'host' | 'moderator' | 'participant';
+  role: 'host' | 'moderator' | 'participant' | 'viewer';
   isOnline: boolean;
   joinedAt: number;
 }
@@ -70,17 +71,6 @@ interface FloatingEmoji {
 const SERVER_URL = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000';
 const YOUTUBE_IFRAME_API_URL = process.env.NEXT_PUBLIC_YOUTUBE_IFRAME_API_URL || 'https://www.youtube.com/iframe_api';
 
-const QUALITY_MAP: Record<string, string> = {
-  'Auto': 'default',
-  '4K (2160p)': 'hd2160',
-  '1440p HD': 'hd1440',
-  '1080p HD': 'hd1080',
-  '720p HD': 'hd720',
-  '480p': 'large',
-  '360p': 'medium',
-  '240p': 'small',
-  '144p': 'tiny',
-};
 
 const QUALITY_REVERSE_MAP: Record<string, string> = {
   'default': 'Auto',
@@ -95,6 +85,8 @@ const QUALITY_REVERSE_MAP: Record<string, string> = {
   'small': '240p',
   'tiny': '144p',
 };
+
+
 
 function extractYouTubeId(urlOrId: string): string | null {
   if (!urlOrId) return null;
@@ -187,6 +179,12 @@ function RoomContent() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [openMenuUserId, setOpenMenuUserId] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'transfer' | 'remove';
+    userId: string;
+    username: string;
+  } | null>(null);
   const menuContainerRef = useRef<HTMLDivElement>(null);
 
   // Live action requests & Modals
@@ -202,26 +200,7 @@ function RoomContent() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(80);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isScrubbing, setIsScrubbing] = useState(false);
   const [actualPlayerState, setActualPlayerState] = useState<number>(-1);
-  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settingsSubmenu, setSettingsSubmenu] = useState<'main' | 'speed' | 'quality'>('main');
-  const [playbackSpeed, setPlaybackSpeed] = useState(1);
-  const [videoQuality, setVideoQuality] = useState('Auto');
-  const [availableQualities, setAvailableQualities] = useState<string[]>([
-    'Auto',
-    '1080p HD',
-    '720p HD',
-    '480p',
-    '360p',
-    '240p',
-  ]);
-  const [isMiniplayer, setIsMiniplayer] = useState(false);
-  const [isTheaterMode, setIsTheaterMode] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const settingsMenuRef = useRef<HTMLDivElement>(null);
   const isLocalActionRef = useRef<boolean>(false);
 
   // Sync references to prevent stale closures in event listeners
@@ -291,36 +270,24 @@ function RoomContent() {
       }
     };
 
+    const closeMenu = () => setOpenMenuUserId(null);
+
     window.addEventListener('keydown', handleKeyDown);
     document.addEventListener('pointerdown', handlePointerDown);
+    // The menu is positioned from the button's screen position, so close it if that moves
+    window.addEventListener('resize', closeMenu);
+    window.addEventListener('scroll', closeMenu, true);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       document.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('scroll', closeMenu, true);
     };
   }, [openMenuUserId]);
 
-  // Fullscreen change listener to sync fullscreen state
-  useEffect(() => {
-    const handleFsChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener('fullscreenchange', handleFsChange);
-    return () => document.removeEventListener('fullscreenchange', handleFsChange);
-  }, []);
 
-  // Click outside to dismiss settings popover
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (settingsMenuRef.current && !settingsMenuRef.current.contains(e.target as Node)) {
-        setIsSettingsOpen(false);
-      }
-    };
-    if (isSettingsOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-    }
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isSettingsOpen]);
+
 
   // 2. Setup Socket.IO connection
   useEffect(() => {
@@ -452,7 +419,15 @@ function RoomContent() {
     s.on('role_assigned', (data: any) => {
       showToast(`🛡️ ${data.username} is now ${data.role}!`, 'success');
       if (data.participants && Array.isArray(data.participants)) {
-        setSyncState((prev) => (prev ? { ...prev, participants: data.participants } : prev));
+        setSyncState((prev) => {
+          if (!prev) return prev;
+          const newHostId = data.hostId || (data.role === 'host' ? data.userId : prev.hostId);
+          return {
+            ...prev,
+            hostId: newHostId,
+            participants: data.participants,
+          };
+        });
       }
     });
 
@@ -475,19 +450,11 @@ function RoomContent() {
 
     setSocket(s);
 
-    const handleUnload = () => {
-      if (s && s.connected) {
-        s.emit('leave_room', { roomCode, userId: myUserId });
-      }
-    };
-
-    window.addEventListener('beforeunload', handleUnload);
-    window.addEventListener('pagehide', handleUnload);
-
+    // NOTE: no leave_room on unload/cleanup. A page refresh also fires beforeunload/pagehide,
+    // and sending leave_room there made the server think the host quit and hand over the room.
+    // A plain disconnect is enough: the server gives the user a short grace period to come
+    // back (refresh) and only removes them if they don't. Only the Leave button emits leave_room.
     return () => {
-      window.removeEventListener('beforeunload', handleUnload);
-      window.removeEventListener('pagehide', handleUnload);
-      handleUnload();
       s.off('connect');
       s.off('connect_error');
       s.off('room_joined');
@@ -514,8 +481,10 @@ function RoomContent() {
   const isParticipant = !isHost && myRole !== 'moderator';
 
   // Synchronize refs with fresh state values for callbacks and event handlers
+  const myRoleRef = useRef<string>(myRole);
   useEffect(() => { syncStateRef.current = syncState; }, [syncState]);
   useEffect(() => { isHostRef.current = isHost; }, [isHost]);
+  useEffect(() => { myRoleRef.current = myRole; }, [myRole]);
   useEffect(() => { isPlayingRef.current = isPlaying; }, [isPlaying]);
   useEffect(() => { socketRef.current = socket; }, [socket]);
   useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
@@ -613,10 +582,11 @@ function RoomContent() {
         videoId: initialVideoId,
         playerVars: {
           autoplay: 0,
-          controls: 0,
+          controls: 1,
           modestbranding: 1,
           rel: 0,
-          disablekb: 1,
+          disablekb: 0,
+          enablejsapi: 1,
         },
         events: {
           onReady: () => {
@@ -641,23 +611,13 @@ function RoomContent() {
                   } catch {}
                 }
               }
-              // Populate available qualities from current video
-              if (typeof playerRef.current?.getAvailableQualityLevels === 'function') {
-                const levels: string[] = playerRef.current.getAvailableQualityLevels();
-                if (Array.isArray(levels) && levels.length > 0) {
-                  const mapped = levels
-                    .map((lvl) => QUALITY_REVERSE_MAP[lvl] || lvl)
-                    .filter((v, i, arr) => arr.indexOf(v) === i);
-                  setAvailableQualities(['Auto', ...mapped.filter((x) => x !== 'Auto')]);
-                }
-              }
             } catch {}
           },
           onPlaybackQualityChange: (event: any) => {
             const currentQualityCode = event?.data;
             if (currentQualityCode) {
               const label = QUALITY_REVERSE_MAP[currentQualityCode] || currentQualityCode;
-              setVideoQuality(label);
+              showToast(`📺 Video Quality: ${label}`, 'info');
             }
           },
           onError: (event: any) => {
@@ -680,8 +640,8 @@ function RoomContent() {
 
             if (isLocalActionRef.current) return;
 
-            // When HOST directly plays or pauses via video clicks or keyboard shortcuts
-            if (isHostRef.current && socketRef.current && roomCodeRef.current) {
+            // When HOST or MODERATOR directly plays or pauses via video clicks or keyboard shortcuts
+            if ((isHostRef.current || myRoleRef.current === 'moderator') && socketRef.current && roomCodeRef.current) {
               const cur = playerRef.current?.getCurrentTime ? playerRef.current.getCurrentTime() : 0;
               if (event.data === 1 && !syncStateRef.current?.playback?.isPlaying) {
                 socketRef.current.emit('play', {
@@ -707,17 +667,38 @@ function RoomContent() {
     } else {
       (window as any).onYouTubeIframeAPIReady = initPlayer;
     }
-  }, [syncState?.playback?.videoId, isHost, socket, roomCode, myUserId, showToast]);
+  }, [syncState?.playback?.videoId, isHost, socket, roomCode, myUserId, showToast, getEstimatedTime]);
 
-  // Sync player position interval
+  // Clean up any previously stored video quality scaling preference
+  useEffect(() => {
+    try {
+      localStorage.removeItem('wp_video_quality');
+    } catch {}
+  }, []);
+
+  // Sync player position interval & Host seek detection on native player
   useEffect(() => {
     if (!playerReady) return;
     const interval = setInterval(() => {
-      if (playerRef.current && !isScrubbing) {
+      if (playerRef.current) {
         try {
           const time = playerRef.current.getCurrentTime();
           const dur = playerRef.current.getDuration();
-          if (typeof time === 'number' && Number.isFinite(time)) setCurrentTime(time);
+          if (typeof time === 'number' && Number.isFinite(time)) {
+            setCurrentTime(time);
+
+            // If this client is Host or Moderator, detect if they sought on the native YouTube player
+            if ((isHostRef.current || myRoleRef.current === 'moderator') && socketRef.current && roomCodeRef.current && syncStateRef.current?.playback) {
+              const expectedTime = getEstimatedTime(syncStateRef.current.playback);
+              if (Math.abs(time - expectedTime) > 2) {
+                socketRef.current.emit('seek', {
+                  roomCode: roomCodeRef.current,
+                  userId: myUserIdRef.current,
+                  time,
+                });
+              }
+            }
+          }
           if (typeof dur === 'number' && Number.isFinite(dur) && dur > 0) {
             setDuration(dur);
           } else {
@@ -728,7 +709,7 @@ function RoomContent() {
     }, 500);
 
     return () => clearInterval(interval);
-  }, [playerReady, isScrubbing]);
+  }, [playerReady, getEstimatedTime]);
 
   // Synchronize playback state changes from server
   useEffect(() => {
@@ -784,12 +765,12 @@ function RoomContent() {
     getEstimatedTime,
   ]);
 
-  // Continuous participant drift alignment
+  // Continuous participant drift alignment (only applies to non-controlling participants/viewers)
   useEffect(() => {
-    if (!playerReady || !playerRef.current || isHost || !syncState?.playback?.videoId) return;
+    if (!playerReady || !playerRef.current || isHost || myRole === 'moderator' || !syncState?.playback?.videoId) return;
 
     const interval = setInterval(() => {
-      if (!playerRef.current || isScrubbing) return;
+      if (!playerRef.current) return;
       try {
         const expected = getEstimatedTime(syncStateRef.current?.playback);
         const actual = playerRef.current.getCurrentTime ? playerRef.current.getCurrentTime() : 0;
@@ -817,11 +798,11 @@ function RoomContent() {
     }, 1200);
 
     return () => clearInterval(interval);
-  }, [playerReady, isHost, syncState?.playback?.videoId, isScrubbing, getEstimatedTime]);
+  }, [playerReady, isHost, myRole, syncState?.playback?.videoId, getEstimatedTime]);
 
-  // Host sends periodic time sync updates while video is playing
+  // Host and Moderator send periodic time sync updates while video is playing
   useEffect(() => {
-    if (!isHost || !isPlaying || !socket || !roomCode) return;
+    if ((!isHost && myRole !== 'moderator') || !isPlaying || !socket || !roomCode) return;
     const interval = setInterval(() => {
       if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
         const cur = playerRef.current.getCurrentTime();
@@ -833,174 +814,6 @@ function RoomContent() {
     return () => clearInterval(interval);
   }, [isHost, isPlaying, socket, roomCode, myUserId]);
 
-  // Controls Handlers
-  const handleTogglePlay = () => {
-    if (!playerRef.current) return;
-
-    if (!isHost && myRole !== 'moderator') {
-      // Non-host sends an action request to host
-      if (socket) {
-        socket.emit('action_request', {
-          roomCode,
-          userId: myUserId,
-          username,
-          action: isPlaying ? 'pause' : 'play',
-          description: isPlaying ? 'wants to Pause the video' : 'wants to Play the video',
-        });
-        showToast('Sent playback request to Host ✨', 'info');
-      }
-      return;
-    }
-
-    const curTime = playerRef.current?.getCurrentTime ? playerRef.current.getCurrentTime() : currentTime;
-    if (isPlaying) {
-      playerRef.current.pauseVideo();
-      setIsPlaying(false);
-      if (socket) {
-        socket.emit('pause', { roomCode, userId: myUserId, time: curTime });
-      }
-    } else {
-      playerRef.current.playVideo();
-      setIsPlaying(true);
-      if (socket) {
-        socket.emit('play', { roomCode, userId: myUserId, time: curTime });
-      }
-    }
-  };
-
-  const handleSeekChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newTime = parseFloat(e.target.value);
-    setCurrentTime(newTime);
-  };
-
-  const handleSeekCommit = () => {
-    setIsScrubbing(false);
-    if (!playerRef.current) return;
-
-    if (!isHost && myRole !== 'moderator') {
-      showToast('Only host/mod can seek video', 'info');
-      return;
-    }
-
-    const cur = playerRef.current.getCurrentTime ? playerRef.current.getCurrentTime() : currentTime;
-    playerRef.current.seekTo(cur, true);
-    if (socket) {
-      socket.emit('seek', { roomCode, userId: myUserId, time: cur });
-    }
-  };
-
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseInt(e.target.value, 10);
-    setVolume(val);
-    if (playerRef.current) {
-      playerRef.current.setVolume(val);
-      if (val === 0) {
-        setIsMuted(true);
-        playerRef.current.mute();
-      } else if (isMuted) {
-        setIsMuted(false);
-        playerRef.current.unMute();
-      }
-    }
-  };
-
-  const toggleMute = () => {
-    if (!playerRef.current) return;
-    if (isMuted) {
-      setIsMuted(false);
-      playerRef.current.unMute();
-      playerRef.current.setVolume(volume || 50);
-    } else {
-      setIsMuted(true);
-      playerRef.current.mute();
-    }
-  };
-
-  const handleSelectSpeed = (speed: number) => {
-    setPlaybackSpeed(speed);
-    if (playerRef.current?.setPlaybackRate) {
-      try {
-        playerRef.current.setPlaybackRate(speed);
-      } catch {}
-    }
-    setSettingsSubmenu('main');
-    setIsSettingsOpen(false);
-    showToast(`Speed set to ${speed === 1 ? 'Normal' : `${speed}x`}`, 'info');
-  };
-
-  const openQualitySubmenu = () => {
-    if (playerRef.current && typeof playerRef.current.getAvailableQualityLevels === 'function') {
-      try {
-        const levels: string[] = playerRef.current.getAvailableQualityLevels();
-        if (Array.isArray(levels) && levels.length > 0) {
-          const mapped = levels
-            .map((lvl) => QUALITY_REVERSE_MAP[lvl] || lvl)
-            .filter((v, i, arr) => arr.indexOf(v) === i);
-          setAvailableQualities(['Auto', ...mapped.filter((x) => x !== 'Auto')]);
-        }
-      } catch {}
-    }
-    setSettingsSubmenu('quality');
-  };
-
-  const handleSelectQuality = (q: string) => {
-    setVideoQuality(q);
-    const qCode = QUALITY_MAP[q] || 'default';
-    if (playerRef.current) {
-      try {
-        if (typeof playerRef.current.setPlaybackQuality === 'function') {
-          playerRef.current.setPlaybackQuality(qCode);
-        }
-        if (typeof playerRef.current.setPlaybackQualityRange === 'function') {
-          playerRef.current.setPlaybackQualityRange(qCode, qCode);
-        }
-        const curTime = playerRef.current.getCurrentTime ? playerRef.current.getCurrentTime() : currentTime;
-        const isCurrentlyPlaying = playerRef.current.getPlayerState ? playerRef.current.getPlayerState() === 1 : isPlaying;
-
-        const vId = syncStateRef.current?.playback?.videoId;
-        if (vId && typeof playerRef.current.loadVideoById === 'function') {
-          isLocalActionRef.current = true;
-          playerRef.current.loadVideoById({
-            videoId: vId,
-            startSeconds: curTime,
-            suggestedQuality: qCode,
-          });
-          if (!isCurrentlyPlaying) {
-            playerRef.current.pauseVideo();
-          }
-          setTimeout(() => {
-            isLocalActionRef.current = false;
-          }, 800);
-        } else if (typeof playerRef.current.seekTo === 'function') {
-          playerRef.current.seekTo(curTime, true);
-        }
-      } catch (err) {
-        console.warn('Error setting quality:', err);
-      }
-    }
-    setSettingsSubmenu('main');
-    setIsSettingsOpen(false);
-    showToast(`Quality set to ${q}`, 'info');
-  };
-
-  const toggleFullscreen = () => {
-    if (document.fullscreenElement) {
-      document.exitFullscreen?.().catch(() => {});
-    } else {
-      const elem = document.getElementById('youtube-player-container');
-      if (elem?.requestFullscreen) {
-        elem.requestFullscreen().catch(() => {});
-      }
-    }
-  };
-
-  const toggleTheaterMode = () => {
-    setIsTheaterMode((prev) => !prev);
-  };
-
-  const toggleMiniplayer = () => {
-    setIsMiniplayer((prev) => !prev);
-  };
 
   const handleLoadVideo = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1311,7 +1124,7 @@ function RoomContent() {
             <UserAvatar name={username} size={32} />
             <span className="font-mouse font-bold text-xl sm:text-2xl tracking-wide text-[#1A1614] leading-none">{username}</span>
             <span className={`text-[11px] sm:text-xs font-black px-2.5 py-0.5 rounded-full uppercase tracking-wide ${
-              isHost ? 'bg-[#FFCC00] text-[#1A1614]' : myRole === 'moderator' ? 'bg-[#9FE3FF] text-[#034C75]' : 'bg-[#EAE4D7] text-[#63594C]'
+              isHost ? 'bg-[#FFCC00] text-[#1A1614]' : myRole === 'moderator' ? 'bg-[#9FE3FF] text-[#034C75]' : myRole === 'viewer' ? 'bg-[#E9D5FF] text-[#6B21A8]' : 'bg-[#EAE4D7] text-[#63594C]'
             }`}>
               {isHost ? 'HOST' : myRole.toUpperCase()}
             </span>
@@ -1337,7 +1150,7 @@ function RoomContent() {
           ══════════════════════════════════════════════════════════════════════ */}
       <main className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-3 mt-1 overflow-hidden">
         {/* ── LEFT COLUMN (Video & Controls) ── */}
-        <div className={`${isTheaterMode ? 'lg:col-span-12' : 'lg:col-span-8'} flex flex-col justify-between h-full min-h-0 gap-2 transition-all duration-300`}>
+        <div className="lg:col-span-8 flex flex-col justify-between h-full min-h-0 gap-2">
           {/* A. "Paste YouTube URL" Box (Host / Moderator only) */}
           {!isParticipant && (
             <div className="bg-white rounded-2xl px-3.5 py-2 flex-shrink-0">
@@ -1372,32 +1185,13 @@ function RoomContent() {
             </div>
           )}
 
-          {/* B. Video Player Box & Integrated Controls Bar */}
+          {/* B. Video Player Box */}
           <div className="flex-1 min-h-0 flex flex-col relative">
-            {/* 16:9 Video Container that fills available space or floats in Miniplayer mode */}
             <div
               id="youtube-player-container"
-              className={`${
-                isMiniplayer
-                  ? 'fixed bottom-5 right-5 w-80 sm:w-96 aspect-video z-50 rounded-2xl shadow-2xl border-2 border-black/80 overflow-hidden ring-4 ring-black/20 flex flex-col justify-between bg-[#18181B]'
-                  : 'relative flex-1 min-h-0 w-full bg-[#18181B] rounded-2xl overflow-hidden flex flex-col justify-between shadow-md'
-              }`}
+              className="relative flex-1 min-h-0 w-full bg-[#18181B] rounded-2xl overflow-hidden shadow-md"
             >
               <div id="youtube-player" className={`w-full h-full ${!syncState?.playback?.videoId ? 'opacity-0 pointer-events-none' : ''}`}></div>
-
-              {/* Miniplayer Expand Button */}
-              {isMiniplayer && (
-                <button
-                  onClick={() => setIsMiniplayer(false)}
-                  className="absolute top-2.5 right-2.5 z-40 bg-black/80 hover:bg-black text-white px-2.5 py-1 rounded-lg flex items-center gap-1.5 text-xs font-bold font-mouse cursor-pointer transition shadow-lg border border-white/20"
-                  title="Restore player to main view"
-                >
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-                  </svg>
-                  <span>Expand</span>
-                </button>
-              )}
 
               {!syncState?.playback?.videoId && !isParticipant && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-[#2B1B2A] via-[#1E1624] to-[#14121A] text-white p-6 select-none z-10">
@@ -1439,7 +1233,6 @@ function RoomContent() {
                       if (playerRef.current) {
                         try {
                           playerRef.current.unMute();
-                          setIsMuted(false);
                           const targetTime = getEstimatedTime(syncState?.playback);
                           if (targetTime > 0) {
                             playerRef.current.seekTo(targetTime, true);
@@ -1473,280 +1266,12 @@ function RoomContent() {
                   </div>
                 ))}
               </div>
-
-              {/* Integrated Bottom Video Controls Bar */}
-              <div className="absolute bottom-0 inset-x-0 z-30 bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-7 pb-2.5 px-3.5 sm:px-4 flex items-center gap-3 select-none text-white">
-                {/* Play / Pause Button */}
-                <button
-                  onClick={isParticipant ? handleRequestPlayPause : handleTogglePlay}
-                  className="text-white hover:text-[#E62719] transition cursor-pointer flex-shrink-0"
-                  title={isParticipant ? 'Request play/pause from host' : isPlaying ? 'Pause' : 'Play'}
-                >
-                  {isPlaying ? (
-                    <div className="flex items-center gap-1 w-5 h-5 justify-center">
-                      <span className="w-1.5 h-4 bg-white rounded-xs"></span>
-                      <span className="w-1.5 h-4 bg-white rounded-xs"></span>
-                    </div>
-                  ) : (
-                    <div className="w-0 h-0 border-y-[6px] border-y-transparent border-l-[12px] border-l-white ml-0.5"></div>
-                  )}
-                </button>
-
-                {/* Speaker Volume Button & YouTube Slider */}
-                <div className="flex items-center group/vol">
-                  <button
-                    onClick={toggleMute}
-                    className="cursor-pointer text-white hover:text-[#E62719] p-1 flex-shrink-0 transition"
-                    title={isMuted || volume === 0 ? 'Unmute (m)' : 'Mute (m)'}
-                  >
-                    {isMuted || volume === 0 ? (
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                        <line x1="23" y1="9" x2="17" y2="15"></line>
-                        <line x1="17" y1="9" x2="23" y2="15"></line>
-                      </svg>
-                    ) : volume < 50 ? (
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                        <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-                      </svg>
-                    ) : (
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
-                      </svg>
-                    )}
-                  </button>
-
-                  {/* YouTube-style smooth volume slider */}
-                  <div className="w-16 sm:w-20 flex items-center ml-1">
-                    <input
-                      type="range"
-                      min={0}
-                      max={100}
-                      value={isMuted ? 0 : volume}
-                      onChange={handleVolumeChange}
-                      className="w-full h-1 bg-white/30 rounded-lg appearance-none cursor-pointer accent-[#E62719] hover:h-1.5 transition-all"
-                      title={`Volume: ${isMuted ? 0 : volume}%`}
-                    />
-                  </div>
-                </div>
-
-                {/* Time: 0:42 / 3:15 */}
-                <span className="text-xs sm:text-sm font-bold text-white/90 font-mono flex-shrink-0 min-w-[70px]">
-                  {formatTime(currentTime)} / {formatTime(duration)}
-                </span>
-
-                {/* Progress / Scrubber Bar */}
-                <div className="relative flex-1 flex items-center">
-                  {isParticipant ? (
-                    <div
-                      onClick={() => {
-                        setTargetSeekTime(Math.round(currentTime));
-                        setIsSeekModalOpen(true);
-                      }}
-                      className="w-full h-1.5 bg-white/20 rounded-full relative cursor-pointer group py-1 flex items-center"
-                      title="Click to request seek"
-                    >
-                      <div
-                        className="h-1.5 bg-[#E62719] rounded-full relative"
-                        style={{ width: `${duration > 0 ? (currentTime / duration) * 100 : 0}%` }}
-                      >
-                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-[#E62719] rounded-full shadow-md"></div>
-                      </div>
-                    </div>
-                  ) : (
-                    <input
-                      type="range"
-                      min={0}
-                      max={duration || 100}
-                      step={0.1}
-                      value={currentTime}
-                      onMouseDown={() => setIsScrubbing(true)}
-                      onTouchStart={() => setIsScrubbing(true)}
-                      onChange={handleSeekChange}
-                      onMouseUp={handleSeekCommit}
-                      onTouchEnd={handleSeekCommit}
-                      className="w-full h-1.5 bg-white/25 rounded-lg appearance-none cursor-pointer accent-[#E62719]"
-                    />
-                  )}
-                </div>
-
-                {/* Settings Gear & Dropdown Menu */}
-                <div className="relative" ref={settingsMenuRef}>
-                  <button
-                    onClick={() => {
-                      setIsSettingsOpen(!isSettingsOpen);
-                      setSettingsSubmenu('main');
-                    }}
-                    className={`p-1 transition cursor-pointer flex-shrink-0 ${
-                      isSettingsOpen ? 'text-[#E62719] rotate-45' : 'text-white/80 hover:text-white'
-                    }`}
-                    title="Settings"
-                  >
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <circle cx="12" cy="12" r="3"></circle>
-                      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
-                    </svg>
-                  </button>
-
-                  {isSettingsOpen && (
-                    <div className="absolute bottom-9 right-0 w-48 sm:w-56 bg-[#18181B]/95 backdrop-blur-md border border-white/15 rounded-xl shadow-2xl p-2 text-white z-50 animate-in fade-in zoom-in-95 font-outfit text-sm">
-                      {settingsSubmenu === 'main' && (
-                        <div className="flex flex-col gap-1">
-                          <div className="px-2.5 py-1 text-xs font-bold text-white/50 border-b border-white/10 uppercase tracking-wider mb-1">
-                            Playback Settings
-                          </div>
-                          <button
-                            onClick={() => setSettingsSubmenu('speed')}
-                            className="flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition cursor-pointer text-left w-full"
-                          >
-                            <span className="flex items-center gap-2">
-                              <span>⚡</span> Speed
-                            </span>
-                            <span className="text-white/60 flex items-center gap-1 text-xs font-bold">
-                              {playbackSpeed === 1 ? 'Normal' : `${playbackSpeed}x`} &gt;
-                            </span>
-                          </button>
-                          <button
-                            onClick={openQualitySubmenu}
-                            className="flex items-center justify-between px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition cursor-pointer text-left w-full"
-                          >
-                            <span className="flex items-center gap-2">
-                              <span>HD</span> Quality
-                            </span>
-                            <span className="text-white/60 flex items-center gap-1 text-xs font-bold">
-                              {videoQuality} &gt;
-                            </span>
-                          </button>
-                        </div>
-                      )}
-
-                      {settingsSubmenu === 'speed' && (
-                        <div className="flex flex-col gap-1 max-h-56 overflow-y-auto">
-                          <button
-                            onClick={() => setSettingsSubmenu('main')}
-                            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-[#E62719] hover:text-white transition cursor-pointer border-b border-white/10 mb-1"
-                          >
-                            <span>&larr;</span> Back
-                          </button>
-                          {[0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2].map((s) => (
-                            <button
-                              key={s}
-                              onClick={() => handleSelectSpeed(s)}
-                              className={`flex items-center justify-between px-2.5 py-1 rounded-lg text-left text-xs transition cursor-pointer ${
-                                playbackSpeed === s ? 'bg-[#E62719] text-white font-bold' : 'hover:bg-white/10 text-white/90'
-                              }`}
-                            >
-                              <span>{s === 1 ? 'Normal' : `${s}x`}</span>
-                              {playbackSpeed === s && <span>✓</span>}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-
-                      {settingsSubmenu === 'quality' && (
-                        <div className="flex flex-col gap-1 max-h-56 overflow-y-auto">
-                          <button
-                            onClick={() => setSettingsSubmenu('main')}
-                            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-[#E62719] hover:text-white transition cursor-pointer border-b border-white/10 mb-1"
-                          >
-                            <span>&larr;</span> Back
-                          </button>
-                          {availableQualities.map((q) => (
-                            <button
-                              key={q}
-                              onClick={() => handleSelectQuality(q)}
-                              className={`flex items-center justify-between px-2.5 py-1 rounded-lg text-left text-xs transition cursor-pointer ${
-                                videoQuality === q ? 'bg-[#E62719] text-white font-bold' : 'hover:bg-white/10 text-white/90'
-                              }`}
-                            >
-                              <span>{q}</span>
-                              {videoQuality === q && <span>✓</span>}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {/* Miniplayer Toggle Button */}
-                <button
-                  onClick={toggleMiniplayer}
-                  className={`p-1 transition cursor-pointer flex-shrink-0 ${
-                    isMiniplayer ? 'text-[#E62719]' : 'text-white/80 hover:text-white'
-                  }`}
-                  title={isMiniplayer ? 'Restore to full player (i)' : 'Miniplayer (i)'}
-                >
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                    <rect x="2" y="4" width="20" height="16" rx="2"></rect>
-                    <rect x="12" y="10" width="8" height="6" rx="1" fill="currentColor"></rect>
-                  </svg>
-                </button>
-
-                {/* Theater Mode Button (Wide View vs Zoom Out to Normal) */}
-                <button
-                  onClick={toggleTheaterMode}
-                  className={`p-1 transition cursor-pointer flex-shrink-0 ${
-                    isTheaterMode ? 'text-[#E62719]' : 'text-white/80 hover:text-white'
-                  }`}
-                  title={isTheaterMode ? 'Zoom out to Default View (t)' : 'Theater mode (t)'}
-                >
-                  {isTheaterMode ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="2" y="4" width="13" height="16" rx="2"></rect>
-                      <rect x="17" y="4" width="5" height="16" rx="1" strokeDasharray="2 2"></rect>
-                    </svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                      <rect x="2" y="4" width="20" height="16" rx="2"></rect>
-                    </svg>
-                  )}
-                </button>
-
-                {/* Fullscreen / Zoom-Out Button */}
-                <button
-                  onClick={toggleFullscreen}
-                  className="text-white/80 hover:text-white p-1 transition cursor-pointer flex-shrink-0"
-                  title={isFullscreen ? 'Zoom out / Exit full screen (f)' : 'Full screen (f)'}
-                >
-                  {isFullscreen ? (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8 3v3a2 2 0 0 1-2 2H3m18 0h-3a2 2 0 0 1-2-2V3m0 18v-3a2 2 0 0 1 2-2h3M3 16h3a2 2 0 0 1 2 2v3"></path>
-                    </svg>
-                  ) : (
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
-                    </svg>
-                  )}
-                </button>
-              </div>
             </div>
-
-            {/* Miniplayer Placeholder in Main Layout */}
-            {isMiniplayer && (
-              <div className="flex-1 w-full bg-white/50 backdrop-blur-sm rounded-2xl border-2 border-dashed border-[#1A1614]/20 flex flex-col items-center justify-center p-6 text-center select-none shadow-sm">
-                <div className="w-12 h-12 rounded-full bg-[#E62719]/10 flex items-center justify-center mb-2">
-                  <span className="text-2xl">📺</span>
-                </div>
-                <p className="font-mouse text-2xl sm:text-3xl text-[#1A1614] font-bold">Video playing in Miniplayer</p>
-                <p className="text-xs sm:text-sm text-[#8C8273] font-outfit mt-0.5">
-                  You can browse participants and chat while watching in the floating player
-                </p>
-                <button
-                  onClick={() => setIsMiniplayer(false)}
-                  className="mt-3 bg-[#E62719] hover:bg-[#D41E11] text-white px-5 py-2 rounded-full font-mouse font-bold text-lg cursor-pointer transition shadow-md"
-                >
-                  Restore to main view
-                </button>
-              </div>
-            )}
           </div>
         </div>
 
         {/* ── RIGHT COLUMN (Sidebar: Tabs & Requests) ── */}
-        <div className={`${isTheaterMode ? 'hidden' : 'lg:col-span-4 flex'} flex flex-col justify-between h-full min-h-0 gap-2 transition-all duration-300`}>
+        <div className="lg:col-span-4 flex flex-col justify-between h-full min-h-0 gap-2">
           {/* Tabs Sidebar (People / Chat / Requests) */}
           <div className="bg-white rounded-2xl p-3 flex flex-col flex-1 min-h-0 overflow-hidden shadow-sm">
             {/* Tabs Header: 2 tabs for participant, 3 for host/mod */}
@@ -1849,6 +1374,10 @@ function RoomContent() {
                           <span className="bg-[#9EE2FF] text-[#054E75] font-black text-[11px] sm:text-xs px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full uppercase tracking-wide">
                             MOD
                           </span>
+                        ) : p.role === 'viewer' ? (
+                          <span className="bg-[#E9D5FF] text-[#6B21A8] font-black text-[11px] sm:text-xs px-2.5 sm:px-3 py-0.5 sm:py-1 rounded-full uppercase tracking-wide">
+                            VIEWER
+                          </span>
                         ) : (
                           <span className="border border-[#D6CBBB] bg-[#FAF7F0] text-[#554C40] font-bold text-[11px] sm:text-xs px-2.5 py-0.5 sm:py-1 rounded-full uppercase">
                             PARTICIPANT
@@ -1858,7 +1387,19 @@ function RoomContent() {
                         {isHost && !isUserHost && !isMe && (
                           <button
                             data-menu-trigger={p.userId}
-                            onClick={() => setOpenMenuUserId(openMenuUserId === p.userId ? null : p.userId)}
+                            onClick={(e) => {
+                              if (openMenuUserId === p.userId) {
+                                setOpenMenuUserId(null);
+                                return;
+                              }
+                              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                              const MENU_W = 190;
+                              const MENU_H = 300;
+                              const left = Math.max(8, Math.min(r.right - MENU_W, window.innerWidth - MENU_W - 8));
+                              const top = Math.max(8, Math.min(r.bottom + 4, window.innerHeight - MENU_H - 8));
+                              setMenuPos({ top, left });
+                              setOpenMenuUserId(p.userId);
+                            }}
                             className="cursor-pointer text-[#1A1614] hover:bg-[#EFEAE0] rounded-lg p-1 transition"
                             aria-label={`Options for ${p.username}`}
                           >
@@ -1869,61 +1410,145 @@ function RoomContent() {
                             </svg>
                           </button>
                         )}
-
-                        {openMenuUserId === p.userId && (
-                          <div
-                            ref={menuContainerRef}
-                            className="absolute right-0 top-7 z-50 bg-white rounded-xl shadow-lg p-1.5 min-w-[140px] flex flex-col gap-1 border border-[#E0D8CB]"
-                          >
-                            {isHost && !isMe && (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    const newRole = isUserMod ? 'participant' : 'moderator';
-                                    if (socket) {
-                                      socket.emit('assign_role', { roomCode, userId: p.userId, role: newRole });
-                                    }
-                                    setOpenMenuUserId(null);
-                                    showToast(`Updated ${p.username} to ${newRole}!`, 'success');
-                                  }}
-                                  className="text-left px-2 py-1 text-xs font-bold hover:bg-[#F4EBD9] rounded-lg text-[#1A1614] cursor-pointer"
-                                >
-                                  {isUserMod ? 'Make Participant' : 'Make Moderator'}
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    if (socket) {
-                                      socket.emit('assign_role', { roomCode, userId: p.userId, role: 'host' });
-                                    }
-                                    setOpenMenuUserId(null);
-                                    showToast(`Transferred host to ${p.username}!`, 'success');
-                                  }}
-                                  className="text-left px-2 py-1 text-xs font-bold hover:bg-[#F4EBD9] rounded-lg text-[#1A1614] cursor-pointer"
-                                >
-                                  Transfer Host 👑
-                                </button>
-                                <button
-                                  onClick={() => {
-                                    if (socket) {
-                                      socket.emit('remove_participant', { roomCode, userId: p.userId });
-                                    }
-                                    setOpenMenuUserId(null);
-                                    showToast(`Removed ${p.username}`, 'info');
-                                  }}
-                                  className="text-left px-2 py-1 text-xs font-bold hover:bg-red-50 text-red-600 rounded-lg cursor-pointer"
-                                >
-                                  Kick User
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        )}
                       </div>
                     </div>
                   );
                 })}
               </div>
             )}
+
+            {/* Manage-user menu + confirm dialog: rendered in a portal (position: fixed) so the
+                scrolling list can never clip them. */}
+            {typeof document !== 'undefined' &&
+              openMenuUserId &&
+              menuPos &&
+              (() => {
+                const menuUser = mergedParticipants.find((x) => x.userId === openMenuUserId);
+                if (!menuUser) return null;
+                const roleOptions: { role: 'moderator' | 'participant' | 'viewer'; icon: string; label: string; toast: string }[] = [
+                  { role: 'moderator', icon: '🛡️', label: 'Moderator', toast: `🛡️ Promoted ${menuUser.username} to Moderator` },
+                  { role: 'participant', icon: '👤', label: 'Participant', toast: `👤 Set ${menuUser.username} as Participant` },
+                  { role: 'viewer', icon: '👁️', label: 'Viewer', toast: `👁️ Set ${menuUser.username} as Viewer` },
+                ];
+                return createPortal(
+                  <div
+                    ref={menuContainerRef}
+                    style={{ position: 'fixed', top: menuPos.top, left: menuPos.left, maxHeight: 'calc(100vh - 16px)' }}
+                    className="z-[90] bg-white rounded-xl shadow-xl p-2 w-[190px] overflow-y-auto flex flex-col gap-1 border border-[#E0D8CB] font-outfit"
+                  >
+                    <div className="px-2 py-1 text-[10px] font-bold text-[#8C8273] uppercase tracking-wider border-b border-[#EFEAE0]">
+                      Manage {menuUser.username}
+                    </div>
+
+                    <div className="text-[11px] font-bold text-[#1A1614] px-2 pt-1">Assign Role:</div>
+                    <div className="flex flex-col gap-0.5">
+                      {roleOptions.map((opt) => (
+                        <button
+                          key={opt.role}
+                          onClick={() => {
+                            socket?.emit('assign_role', { roomCode, userId: menuUser.userId, role: opt.role }, (res: any) => {
+                              if (res?.success) showToast(opt.toast, 'success');
+                              else showToast(`⚠️ ${res?.error || 'Could not change role'}`, 'error');
+                            });
+                            setOpenMenuUserId(null);
+                          }}
+                          disabled={menuUser.role === opt.role}
+                          className={`text-left px-2 py-1 text-xs rounded-lg flex items-center justify-between transition ${
+                            menuUser.role === opt.role
+                              ? 'bg-[#EAE4D7]/50 text-[#63594C] font-bold cursor-default'
+                              : 'hover:bg-[#FAF7F0] text-[#1A1614] cursor-pointer'
+                          }`}
+                        >
+                          <span>{opt.icon} {opt.label}</span>
+                          {menuUser.role === opt.role && <span className="text-[10px] font-bold">✓</span>}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="border-t border-[#EFEAE0] my-1"></div>
+
+                    <button
+                      onClick={() => {
+                        setConfirmAction({ type: 'transfer', userId: menuUser.userId, username: menuUser.username });
+                        setOpenMenuUserId(null);
+                      }}
+                      className="text-left px-2 py-1.5 text-xs font-bold hover:bg-[#FFF8E6] rounded-lg text-[#996500] cursor-pointer flex items-center gap-1.5 transition"
+                    >
+                      <span>👑</span>
+                      <span>Transfer Host</span>
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setConfirmAction({ type: 'remove', userId: menuUser.userId, username: menuUser.username });
+                        setOpenMenuUserId(null);
+                      }}
+                      className="text-left px-2 py-1.5 text-xs font-bold hover:bg-red-50 text-red-600 rounded-lg cursor-pointer flex items-center gap-1.5 transition"
+                    >
+                      <span>🚫</span>
+                      <span>Remove User</span>
+                    </button>
+                  </div>,
+                  document.body
+                );
+              })()}
+
+            {typeof document !== 'undefined' &&
+              confirmAction &&
+              createPortal(
+                <div
+                  className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 p-4"
+                  onClick={() => setConfirmAction(null)}
+                >
+                  <div
+                    className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-2xl font-outfit"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <h3 className="font-bold text-lg text-[#1A1614]">
+                      {confirmAction.type === 'transfer' ? 'Transfer host?' : 'Remove user?'}
+                    </h3>
+                    <p className="text-sm text-[#554C40] mt-1">
+                      {confirmAction.type === 'transfer'
+                        ? `${confirmAction.username} becomes the Host and you become a Moderator.`
+                        : `${confirmAction.username} will be removed and won't be able to rejoin this room.`}
+                    </p>
+                    <div className="flex justify-end gap-2 mt-4">
+                      <button
+                        onClick={() => setConfirmAction(null)}
+                        className="px-3.5 py-1.5 rounded-lg text-sm font-bold bg-[#FAF7F0] hover:bg-[#EFEAE0] text-[#1A1614] cursor-pointer transition"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => {
+                          const { type, userId, username: targetName } = confirmAction;
+                          setConfirmAction(null);
+                          socket?.emit(
+                            type === 'transfer' ? 'transfer_host' : 'remove_participant',
+                            { roomCode, userId },
+                            (res: any) => {
+                              if (res?.success) {
+                                showToast(
+                                  type === 'transfer' ? `👑 Host transferred to ${targetName}!` : `🚪 Removed ${targetName}`,
+                                  type === 'transfer' ? 'success' : 'info'
+                                );
+                              } else {
+                                showToast(`⚠️ ${res?.error || 'Action failed'}`, 'error');
+                              }
+                            }
+                          );
+                        }}
+                        className={`px-3.5 py-1.5 rounded-lg text-sm font-bold text-white cursor-pointer transition ${
+                          confirmAction.type === 'transfer' ? 'bg-[#996500] hover:bg-[#7a5100]' : 'bg-red-600 hover:bg-red-700'
+                        }`}
+                      >
+                        {confirmAction.type === 'transfer' ? 'Transfer' : 'Remove'}
+                      </button>
+                    </div>
+                  </div>
+                </div>,
+                document.body
+              )}
 
             {/* TAB CONTENT: CHAT */}
             {activeTab === 'chat' && (
