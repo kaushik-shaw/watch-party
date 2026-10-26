@@ -108,14 +108,10 @@ export class MessageHandler {
     this.socket.on('disconnect', () => this.handleDisconnect());
   }
 
-  // ─── 1. CREATE ROOM ────────────────────────────────────────────────────────
   private handleCreateRoom(data: any, callback?: (res: any) => void): void {
-    // Strictly delegate through handleJoinRoom with create: true so that room existence,
-    // session hijacking, and ban checks are always enforced.
     this.handleJoinRoom({ ...data, create: true }, callback);
   }
 
-  // ─── 2. JOIN ROOM ──────────────────────────────────────────────────────────
   private async handleJoinRoom(data: any, callback?: (res: any) => void): Promise<void> {
     try {
       const roomCode = cleanRoomCode(data?.roomId || data?.roomCode);
@@ -256,7 +252,6 @@ export class MessageHandler {
     }
   }
 
-  // ─── 3. LEAVE ROOM (Explicit user click) ───────────────────────────────────
   private handleLeaveRoom(data: any, callback?: (res: any) => void): void {
     try {
       const roomCode = this.socket.data.roomCode;
@@ -318,10 +313,8 @@ export class MessageHandler {
     }
   }
 
-  // ─── 4. PLAY (Host / Moderator only) ───────────────────────────────────────
   private handlePlay(data: any, callback?: (res: any) => void): void {
     try {
-      // P0: Strictly read userId and roomCode from socket.data
       const roomCode = this.socket.data.roomCode;
       const userId = this.socket.data.userId;
 
@@ -371,7 +364,6 @@ export class MessageHandler {
     }
   }
 
-  // ─── 5. PAUSE (Host / Moderator only) ──────────────────────────────────────
   private handlePause(data: any, callback?: (res: any) => void): void {
     try {
       const roomCode = this.socket.data.roomCode;
@@ -423,7 +415,6 @@ export class MessageHandler {
     }
   }
 
-  // ─── 6. SEEK (Host / Moderator only) ───────────────────────────────────────
   private handleSeek(data: any, callback?: (res: any) => void): void {
     try {
       const roomCode = this.socket.data.roomCode;
@@ -483,7 +474,6 @@ export class MessageHandler {
     }
   }
 
-  // ─── 7. CHANGE VIDEO (Host / Moderator only) ───────────────────────────────
   private handleChangeVideo(data: any, callback?: (res: any) => void): void {
     try {
       const roomCode = this.socket.data.roomCode;
@@ -543,7 +533,6 @@ export class MessageHandler {
     }
   }
 
-  // ─── 8. ASSIGN ROLE (Host only) ────────────────────────────────────────────
   private handleAssignRole(data: any, callback?: (res: any) => void): void {
     try {
       const roomCode = this.socket.data.roomCode;
@@ -618,10 +607,8 @@ export class MessageHandler {
     }
   }
 
-  // ─── 8B. TRANSFER HOST (Host only) ─────────────────────────────────────────
   private handleTransferHost(data: any, callback?: (res: any) => void): void {
     try {
-      // P0: Strictly read authenticated roomCode and userId from socket.data
       const roomCode = this.socket.data.roomCode;
       const hostUserId = this.socket.data.userId;
       const targetUserId = sanitize(data?.userId || data?.targetUserId, 50);
@@ -690,10 +677,8 @@ export class MessageHandler {
     }
   }
 
-  // ─── 9. REMOVE PARTICIPANT (Host only) ─────────────────────────────────────
   private handleRemoveParticipant(data: any, callback?: (res: any) => void): void {
     try {
-      // P0: Strictly read authenticated roomCode and userId from socket.data
       const roomCode = this.socket.data.roomCode;
       const hostUserId = this.socket.data.userId;
       const targetUserId = sanitize(data?.userId || data?.targetUserId, 50);
@@ -771,7 +756,6 @@ export class MessageHandler {
     }
   }
 
-  // ─── 10. ACTION REQUEST (Participant -> Host/Mod) ──────────────────────────
   private handleActionRequest(data: any, callback?: (res: any) => void): void {
     try {
       const roomCode = this.socket.data.roomCode;
@@ -841,7 +825,6 @@ export class MessageHandler {
       // Store in room queue to prevent duplicate execution and survive refreshes
       room.addPendingRequest(requestItem);
 
-      // P1: Send request_added ONLY to host and moderator sockets
       for (const [, p] of room.participants) {
         if ((p.role === 'host' || p.role === 'moderator') && p.socketId) {
           this.io.to(p.socketId).emit('request_added', requestItem);
@@ -855,7 +838,6 @@ export class MessageHandler {
     }
   }
 
-  // ─── 11. RESOLVE REQUEST (Host / Mod approves or rejects) ──────────────────
   private handleResolveRequest(data: any, callback?: (res: any) => void): void {
     try {
       const roomCode = this.socket.data.roomCode;
@@ -881,7 +863,6 @@ export class MessageHandler {
         return;
       }
 
-      // P1: Look up stored request on the server to prevent untrusted payload tampering
       const storedReq = room.getPendingRequest(requestId);
       if (!storedReq) {
         if (typeof callback === 'function') callback({ success: false, error: 'Request not found or already resolved' });
@@ -892,7 +873,6 @@ export class MessageHandler {
       room.removePendingRequest(requestId);
 
       if (approved) {
-        // P1: Approving play/pause ignores client time and uses server's extrapolated wall-clock time!
         if (storedReq.action === 'pause') {
           room.updatePlayback('pause');
           room.broadcastSyncState(this.io);
@@ -938,7 +918,6 @@ export class MessageHandler {
     }
   }
 
-  // ─── 12. CHAT (Rate-limited, membership checked) ───────────────────────────
   private handleSendChat(data: any, callback?: (res: any) => void): void {
     try {
       const roomCode = this.socket.data.roomCode;
@@ -988,7 +967,6 @@ export class MessageHandler {
     }
   }
 
-  // ─── 13. REACTIONS (Membership checked) ────────────────────────────────────
   private handleReaction(data: any): void {
     try {
       const roomCode = this.socket.data.roomCode;
@@ -1017,7 +995,6 @@ export class MessageHandler {
     }
   }
 
-  // ─── 13.5 SYNC TIME (Host drift alignment) ─────────────────────────────────
   private handleSyncTime(data: any): void {
     try {
       const roomCode = this.socket.data.roomCode;
@@ -1044,7 +1021,6 @@ export class MessageHandler {
     }
   }
 
-  // ─── 14. DISCONNECT (Grace period and offline marking) ──────────────────────
   private handleDisconnect(): void {
     try {
       const roomCode = this.socket.data.roomCode;

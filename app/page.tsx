@@ -5,8 +5,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { setStoredUsername } from '../lib/session';
 
-// ─── Hand-drawn Doodle SVGs matching reference image exactly ───────────────
-
 
 const DoodleCrown = () => (
   <svg width="48" height="36" viewBox="0 0 54 40" fill="none" className="select-none pointer-events-none">
@@ -176,7 +174,6 @@ const CurlyArrowBesideGhost = () => (
   </svg>
 );
 
-// ─── Main Component ─────────────────────────────────────────────────────────
 
 export default function LandingPage() {
   const router = useRouter();
@@ -429,9 +426,6 @@ export default function LandingPage() {
         />
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          1. TOP NAVIGATION
-          ══════════════════════════════════════════════════════════════════════ */}
       <nav className="relative z-30 flex items-center justify-between px-4 sm:px-6 md:px-10 pt-2 sm:pt-3 md:pt-4 pb-0 sm:pb-1 flex-shrink-0 gap-2">
         {/* LOGO: Modak font in red */}
         <button
@@ -466,9 +460,6 @@ export default function LandingPage() {
         </button>
       </nav>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          2. GIANT HERO HEADLINE: "WATCH YOUTUBE" & "TOGETHER, IN SYNC."
-          ══════════════════════════════════════════════════════════════════════ */}
       <div
         ref={headlineContainerRef}
         className="relative z-10 flex flex-col items-center justify-center flex-shrink min-h-0 px-2 sm:px-4 pt-0 pb-0"
@@ -568,9 +559,6 @@ export default function LandingPage() {
         </div>
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          3. MAIN INTERACTION STAGE
-          ══════════════════════════════════════════════════════════════════════ */}
       <div className={`relative flex items-center justify-center flex-1 min-h-0 w-full max-w-[1400px] mx-auto px-3 sm:px-4 ${contentReady ? 'animate-fade-rise' : 'opacity-0 pointer-events-none'
         }`}>
 
@@ -726,9 +714,6 @@ export default function LandingPage() {
         </p>
       </footer>
 
-      {/* ══════════════════════════════════════════════════════════════════════
-          5. CREATE ROOM MODAL POP-UP
-          ══════════════════════════════════════════════════════════════════════ */}
       {isCreateModalOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/45 backdrop-blur-[3px] animate-fade-in"
