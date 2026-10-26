@@ -6,7 +6,7 @@ A production-grade, real-time synchronized YouTube Watch Party web application b
 
 ## 🌐 Live Deployment URL
 
-- **Production URL**: [https://watch-party-kaushik.onrender.com](https://watch-party-kaushik.onrender.com) 
+- **Production URL**: [https://watch-party-1-yers.onrender.com](https://watch-party-1-yers.onrender.com/) 
 - **WebSocket Backend**: [https://watch-party-hptw.onrender.com](https://watch-party-hptw.onrender.com)
 
 ---
