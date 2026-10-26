@@ -201,7 +201,18 @@ function RoomContent() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [actualPlayerState, setActualPlayerState] = useState<number>(-1);
+  const [showLockOverlay, setShowLockOverlay] = useState(false);
+  const lockOverlayTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const lockOverlayOpenedAtRef = useRef<number>(0);
   const isLocalActionRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    return () => {
+      if (lockOverlayTimerRef.current) {
+        clearTimeout(lockOverlayTimerRef.current);
+      }
+    };
+  }, []);
 
   // Sync references to prevent stale closures in event listeners
   const syncStateRef = useRef<RoomSyncState | null>(null);
@@ -497,6 +508,43 @@ function RoomContent() {
     }
   }, [isParticipant, activeTab]);
 
+  const handleParticipantVideoClick = () => {
+    if (!isParticipant) return;
+
+    // Unmute if muted by browser autoplay policy and ensure playing in sync
+    if (playerRef.current) {
+      try {
+        if (typeof playerRef.current.isMuted === 'function' && playerRef.current.isMuted()) {
+          playerRef.current.unMute();
+        }
+        if (syncStateRef.current?.playback?.isPlaying && typeof playerRef.current.getPlayerState === 'function' && playerRef.current.getPlayerState() !== 1) {
+          playerRef.current.playVideo();
+        }
+      } catch {}
+    }
+
+    const now = Date.now();
+    // Dismiss only if overlay has already been clearly visible for over 500ms
+    if (showLockOverlay && now - lockOverlayOpenedAtRef.current > 500) {
+      setShowLockOverlay(false);
+      if (lockOverlayTimerRef.current) {
+        clearTimeout(lockOverlayTimerRef.current);
+        lockOverlayTimerRef.current = null;
+      }
+      return;
+    }
+
+    // Show lock overlay and automatically fade out smoothly after 2.8s
+    lockOverlayOpenedAtRef.current = now;
+    setShowLockOverlay(true);
+    if (lockOverlayTimerRef.current) {
+      clearTimeout(lockOverlayTimerRef.current);
+    }
+    lockOverlayTimerRef.current = setTimeout(() => {
+      setShowLockOverlay(false);
+    }, 2800);
+  };
+
   const handleRequestPlayPause = () => {
     if (!socket) return;
     const nextAction = isPlaying ? 'pause' : 'play';
@@ -675,6 +723,24 @@ function RoomContent() {
       localStorage.removeItem('wp_video_quality');
     } catch {}
   }, []);
+
+  // Ensure YouTube iframe directly ignores pointer events for participants so clicks reliably hit the lock overlay
+  useEffect(() => {
+    const updateIframePointerEvents = () => {
+      try {
+        const iframe =
+          playerRef.current?.getIframe?.() ||
+          (document.querySelector('#youtube-player-container iframe') as HTMLIFrameElement | null);
+        if (iframe) {
+          iframe.style.pointerEvents = isParticipant ? 'none' : 'auto';
+        }
+      } catch {}
+    };
+
+    updateIframePointerEvents();
+    const interval = setInterval(updateIframePointerEvents, 400);
+    return () => clearInterval(interval);
+  }, [isParticipant, playerReady]);
 
   // Sync player position interval & Host seek detection on native player
   useEffect(() => {
@@ -1011,7 +1077,11 @@ function RoomContent() {
         <div className="flex flex-col items-center gap-4">
           <span
             className="text-[#E62719] text-5xl font-modak tracking-normal select-none"
-            style={{ WebkitTextStroke: '6px white', paintOrder: 'stroke fill' }}
+            style={{
+              fontFamily: "'Modak', cursive",
+              WebkitTextStroke: '6px white',
+              paintOrder: 'stroke fill',
+            }}
           >
             WATCHPARTY
           </span>
@@ -1189,11 +1259,18 @@ function RoomContent() {
           <div className="flex-1 min-h-0 flex flex-col relative">
             <div
               id="youtube-player-container"
-              className="relative flex-1 min-h-0 w-full bg-[#18181B] rounded-2xl overflow-hidden shadow-md"
+              onClick={isParticipant ? handleParticipantVideoClick : undefined}
+              className={`relative flex-1 min-h-0 w-full bg-[#18181B] rounded-2xl overflow-hidden shadow-md select-none ${
+                isParticipant ? 'participant-locked-player' : ''
+              }`}
             >
-              <div id="youtube-player" className={`w-full h-full ${!syncState?.playback?.videoId ? 'opacity-0 pointer-events-none' : ''}`}></div>
+              {/* YouTube Iframe API Mount Container */}
+              <div className={`w-full h-full ${!syncState?.playback?.videoId ? 'opacity-0' : ''} ${isParticipant ? 'pointer-events-none' : ''}`}>
+                <div id="youtube-player" className="w-full h-full"></div>
+              </div>
 
-              {!syncState?.playback?.videoId && !isParticipant && (
+              {/* No video loaded placeholder */}
+              {!syncState?.playback?.videoId && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-gradient-to-b from-[#2B1B2A] via-[#1E1624] to-[#14121A] text-white p-6 select-none z-10">
                   <div className="w-16 h-16 rounded-full bg-[#E62719]/15 flex items-center justify-center mb-3">
                     <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#E62719" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -1201,56 +1278,47 @@ function RoomContent() {
                     </svg>
                   </div>
                   <p className="font-outfit font-bold text-lg sm:text-xl text-center text-[#F7EAD0]">
-                    Host: paste a YouTube URL to start
+                    {isParticipant ? 'Waiting for host to select a video' : 'Host: paste a YouTube URL to start'}
                   </p>
                   <p className="text-xs sm:text-sm text-[#8C8273] font-outfit mt-1 text-center">
-                    Use the input box above to load any video
+                    {isParticipant ? 'The video will sync automatically once started' : 'Use the input box above to load any video'}
                   </p>
                 </div>
               )}
 
-              {/* Participant Center Lock Overlay (Only shown when no video is loaded) */}
-              {isParticipant && !syncState?.playback?.videoId && (
-                <div className="absolute inset-0 flex flex-col items-center justify-center p-6 select-none z-20 pointer-events-none">
-                  <ParticipantLockIcon />
-                  <h3 className="text-white text-3xl sm:text-4xl font-mouse font-bold tracking-wide text-center drop-shadow-md">
-                    You’re a participant
-                  </h3>
-                  <p className="text-[#EFECE6] text-base sm:text-lg font-mouse font-bold text-center mt-1 drop-shadow-sm tracking-wide">
-                    Video controls are disabled.
-                  </p>
-                  <p className="text-[#EFECE6] text-base sm:text-lg font-mouse font-bold text-center drop-shadow-sm tracking-wide">
-                    Request changes from the host.
-                  </p>
-                </div>
-              )}
-
-              {/* Participant Autoplay Unblock Overlay */}
-              {isParticipant && syncState?.playback?.videoId && syncState?.playback?.isPlaying && actualPlayerState !== 1 && (
-                <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/60 backdrop-blur-xs select-none p-4">
-                  <button
-                    onClick={() => {
-                      if (playerRef.current) {
-                        try {
-                          playerRef.current.unMute();
-                          const targetTime = getEstimatedTime(syncState?.playback);
-                          if (targetTime > 0) {
-                            playerRef.current.seekTo(targetTime, true);
-                          }
-                          playerRef.current.playVideo();
-                        } catch {}
-                        setIsPlaying(true);
-                        setActualPlayerState(1);
-                      }
+              {/* Participant & Viewer Tap/Click Trap and Lock Overlay */}
+              {isParticipant && (
+                <div
+                  id="participant-lock-overlay"
+                  onClick={handleParticipantVideoClick}
+                  className="absolute inset-0 z-30 flex flex-col items-center justify-center p-6 select-none cursor-pointer"
+                  style={{
+                    backgroundColor: showLockOverlay ? '#141217' : '#000000',
+                    opacity: showLockOverlay ? 0.96 : 0.0001,
+                    transition: 'opacity 0.25s ease-in-out, background-color 0.25s ease-in-out',
+                    pointerEvents: 'auto',
+                  }}
+                  aria-label="Video player lock"
+                >
+                  <div
+                    className="flex flex-col items-center justify-center transition-all duration-200"
+                    style={{
+                      opacity: showLockOverlay ? 1 : 0,
+                      transform: showLockOverlay ? 'scale(1)' : 'scale(0.95)',
+                      pointerEvents: 'none',
                     }}
-                    className="cursor-pointer bg-[#E62719] hover:bg-[#D41E11] text-white px-7 py-3.5 rounded-full font-mouse font-bold text-2xl tracking-wide border-2 border-white shadow-2xl flex items-center gap-3 animate-pulse hover:scale-105 transition-transform active:scale-95"
                   >
-                    <span className="text-3xl">🔊</span>
-                    <span>Click to Unmute & Sync Video</span>
-                  </button>
-                  <p className="text-white/80 text-sm font-outfit mt-3 text-center">
-                    Browser blocked audio autoplay — click above to watch in real-time with host
-                  </p>
+                    <ParticipantLockIcon />
+                    <h3 className="text-white text-3xl sm:text-4xl font-mouse font-bold tracking-wide text-center drop-shadow-md">
+                      You’re a {myRole === 'viewer' ? 'viewer' : 'participant'}
+                    </h3>
+                    <p className="text-[#EFECE6] text-base sm:text-lg font-mouse font-bold text-center mt-1.5 drop-shadow-sm tracking-wide">
+                      Video controls are disabled.
+                    </p>
+                    <p className="text-[#EFECE6] text-base sm:text-lg font-mouse font-bold text-center drop-shadow-sm tracking-wide">
+                      Request changes from the host.
+                    </p>
+                  </div>
                 </div>
               )}
 

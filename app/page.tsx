@@ -385,7 +385,7 @@ export default function LandingPage() {
       >
         <div className="flex flex-col items-center gap-4">
           <span
-            className="text-[#E62719] text-4xl xs:text-5xl sm:text-6xl md:text-7xl tracking-normal animate-pulse select-none"
+            className="text-[#E62719] text-4xl xs:text-5xl sm:text-6xl md:text-7xl tracking-normal select-none"
             style={{
               fontFamily: "'Modak', cursive",
               WebkitTextStroke: '6px white',

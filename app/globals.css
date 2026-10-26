@@ -214,3 +214,9 @@ body {
   backface-visibility: hidden;
   transform-origin: bottom right;
 }
+
+/* Participant & Viewer video lock: prevent direct YouTube player interaction so tap/click triggers the lock overlay */
+.participant-locked-player iframe,
+.participant-locked-player #youtube-player {
+  pointer-events: none !important;
+}
