@@ -105,12 +105,12 @@ export async function syncRoomToDb(roomData: {
         where: { roomCode: roomData.roomCode },
         update: {
           hostId: roomData.hostId,
-          title: roomData.title || undefined,
-          videoId: roomData.videoId || null,
-          currentTime: roomData.currentTime ?? 0,
-          isPlaying: roomData.isPlaying ?? false,
-          playbackRate: roomData.playbackRate ?? 1.0,
-          status: roomData.status || undefined,
+          title: roomData.title !== undefined ? roomData.title : undefined,
+          videoId: roomData.videoId !== undefined ? (roomData.videoId || null) : undefined,
+          currentTime: roomData.currentTime !== undefined ? roomData.currentTime : undefined,
+          isPlaying: roomData.isPlaying !== undefined ? roomData.isPlaying : undefined,
+          playbackRate: roomData.playbackRate !== undefined ? roomData.playbackRate : undefined,
+          status: roomData.status !== undefined ? roomData.status : undefined,
         },
         create: {
           roomCode: roomData.roomCode,
@@ -270,8 +270,8 @@ export async function recordUserSession(sessionData: {
         where: { roomCode: sessionData.roomCode },
       });
 
-      const newPeak = Math.max(currentMeta?.peakParticipantCount ?? 1, activeOnlineCount);
-      const newTotalJoins = Math.max(totalDistinctUsers, currentMeta?.totalJoins ?? 1);
+      const newPeak = Math.max(currentMeta?.peakParticipantCount ?? 0, activeOnlineCount);
+      const newTotalJoins = Math.max(totalDistinctUsers, currentMeta?.totalJoins ?? 0);
 
       await prisma.roomMetadata.upsert({
         where: { roomCode: sessionData.roomCode },

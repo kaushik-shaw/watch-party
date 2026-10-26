@@ -34,13 +34,50 @@ export class RoomManager {
     const code = customCode ? customCode.trim().toUpperCase() : this.generateCode();
     const existing = this.rooms.get(code);
     if (existing) {
-      // If room already exists, preserve original host; newcomers become participants
-      const role: Role = existing.hostId === hostUserId ? 'host' : 'participant';
-      existing.addOrUpdateParticipant(hostUserId, hostUsername, hostSocketId, role);
       return existing;
     }
     const room = new Room(code, hostUserId, hostUsername, hostSocketId);
     this.rooms.set(code, room);
+    return room;
+  }
+
+  /**
+   * Restores a persistent Room from database into active memory.
+   */
+  restoreRoomFromDb(data: {
+    roomCode: string;
+    hostId: string;
+    videoId?: string | null;
+    currentTime?: number | null;
+    isPlaying?: boolean | null;
+    playbackRate?: number | null;
+    messages?: Array<{ id: string; userId: string; username: string; message: string; createdAt: Date }>;
+  }): Room {
+    const room = new Room(data.roomCode, data.hostId, 'Host', '');
+    if (data.videoId) {
+      room.playback.videoId = data.videoId;
+    }
+    room.playback.currentTime = data.currentTime ?? 0;
+    room.playback.isPlaying = data.isPlaying ?? false;
+    room.playback.playbackRate = data.playbackRate ?? 1.0;
+    room.playback.updatedAt = Date.now();
+
+    if (data.messages && Array.isArray(data.messages)) {
+      const sorted = [...data.messages].sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+      );
+      sorted.forEach((m) => {
+        room.addChatMessage({
+          id: m.id,
+          userId: m.userId,
+          username: m.username,
+          message: m.message,
+          timestamp: new Date(m.createdAt).getTime(),
+        });
+      });
+    }
+
+    this.rooms.set(data.roomCode, room);
     return room;
   }
 

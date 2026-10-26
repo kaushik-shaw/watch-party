@@ -58,6 +58,7 @@ const io = new Server(server, {
     origin: CORS_ORIGIN,
     methods: ['GET', 'POST'],
   },
+  transports: ['websocket'],
 });
 
 // Central RoomManager singleton

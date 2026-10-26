@@ -39,7 +39,10 @@ export function getStoredUserId(): string {
   if (typeof window === 'undefined') return '';
   let id = sessionStorage.getItem(TAB_USER_ID_KEY);
   if (!id) {
-    id = 'user_' + Math.random().toString(36).substring(2, 10);
+    const uuid = typeof window.crypto?.randomUUID === 'function'
+      ? window.crypto.randomUUID()
+      : Math.random().toString(36).substring(2, 10);
+    id = 'user_' + uuid;
     sessionStorage.setItem(TAB_USER_ID_KEY, id);
   }
   return id;

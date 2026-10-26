@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Server, Socket } from 'socket.io';
 import { RoomManager } from './RoomManager';
 import { Room } from './Room';
@@ -11,6 +12,7 @@ import {
   updateParticipantRoleInDb,
   deleteParticipantFromDb,
   markRoomInactiveInDb,
+  loadRoomFromDb,
 } from '../db';
 
 export interface SocketData {
@@ -108,71 +110,16 @@ export class MessageHandler {
 
   // ─── 1. CREATE ROOM ────────────────────────────────────────────────────────
   private handleCreateRoom(data: any, callback?: (res: any) => void): void {
-    try {
-      const userId = sanitize(data?.userId || `user_${Math.random().toString(36).substring(2, 9)}`, 50);
-      const username = sanitize(data?.username || 'Host', 30);
-      const requestedRoomCode = cleanRoomCode(data?.roomCode || data?.roomId);
-
-      if (!username) {
-        const err = { message: 'Username is required to create a room' };
-        this.socket.emit('error', err);
-        if (typeof callback === 'function') callback({ success: false, error: err.message });
-        return;
-      }
-
-      const room = this.roomManager.createRoom(userId, username, this.socket.id, requestedRoomCode || undefined);
-      const token = room.createOrGetSessionToken(userId);
-
-      // Bind authenticated session state to socket
-      this.socket.data.userId = userId;
-      this.socket.data.roomCode = room.roomCode;
-      this.socket.data.username = username;
-
-      this.socket.join(room.roomCode);
-
-      const syncState = room.getSyncState();
-      this.socket.emit('room_created', {
-        roomCode: room.roomCode,
-        roomId: room.roomCode,
-        syncState,
-        sessionToken: token,
-      });
-
-      room.broadcastSyncState(this.io);
-
-      // Asynchronously sync to DB
-      syncRoomToDb({
-        roomCode: room.roomCode,
-        hostId: userId,
-        videoId: room.playback.videoId,
-        currentTime: 0,
-        isPlaying: false,
-        activeCount: 1,
-      });
-      recordUserSession({
-        userId,
-        username,
-        roomCode: room.roomCode,
-        socketId: this.socket.id,
-        role: 'host',
-        activeCount: 1,
-      });
-
-      if (typeof callback === 'function') {
-        callback({ success: true, roomCode: room.roomCode, roomId: room.roomCode, syncState, sessionToken: token });
-      }
-    } catch (err: any) {
-      console.error('[create_room error]', err);
-      this.socket.emit('error', { message: err?.message || 'Failed to create room' });
-      if (typeof callback === 'function') callback({ success: false, error: err?.message });
-    }
+    // Strictly delegate through handleJoinRoom with create: true so that room existence,
+    // session hijacking, and ban checks are always enforced.
+    this.handleJoinRoom({ ...data, create: true }, callback);
   }
 
   // ─── 2. JOIN ROOM ──────────────────────────────────────────────────────────
-  private handleJoinRoom(data: any, callback?: (res: any) => void): void {
+  private async handleJoinRoom(data: any, callback?: (res: any) => void): Promise<void> {
     try {
       const roomCode = cleanRoomCode(data?.roomId || data?.roomCode);
-      const userId = sanitize(data?.userId || `user_${Math.random().toString(36).substring(2, 9)}`, 50);
+      const userId = sanitize(data?.userId || `user_${crypto.randomUUID()}`, 50);
       const username = sanitize(data?.username || 'Guest', 30);
       const isCreateRequest = Boolean(data?.create);
       const sessionToken = sanitize(data?.sessionToken, 100);
@@ -186,7 +133,23 @@ export class MessageHandler {
 
       let room = this.roomManager.getRoom(roomCode);
 
-      // P0: Do not silently create a room on mistyped room code unless create: true was passed
+      // Attempt restoring from DB if memory cache missed (e.g. after Render sleep/restart)
+      if (!room) {
+        const dbRoom = await loadRoomFromDb(roomCode);
+        if (dbRoom && dbRoom.status !== 'ended') {
+          room = this.roomManager.restoreRoomFromDb({
+            roomCode: dbRoom.roomCode,
+            hostId: dbRoom.hostId,
+            videoId: dbRoom.videoId,
+            currentTime: dbRoom.currentTime,
+            isPlaying: dbRoom.isPlaying,
+            playbackRate: dbRoom.playbackRate,
+            messages: dbRoom.messages,
+          });
+        }
+      }
+
+      // If room still doesn't exist, only allow creation if create: true was passed
       if (!room) {
         if (!isCreateRequest) {
           const err = { error: 'ROOM_NOT_FOUND', message: 'Room not found. Check your room code or create a new room.' };
@@ -223,13 +186,24 @@ export class MessageHandler {
       this.socket.join(room.roomCode);
 
       const syncState = room.getSyncState();
+      const isController = participant.role === 'host' || participant.role === 'moderator';
+      const pendingReqs = isController ? room.getPendingRequestsArray() : [];
+      const chatHistory = room.getChatHistory();
+
       this.socket.emit('room_joined', {
         roomCode: room.roomCode,
         roomId: room.roomCode,
         syncState,
         role: participant.role,
         sessionToken: token,
+        requests: pendingReqs,
+        chatHistory,
       });
+
+      // Send requests_list to host or moderator
+      if (isController && pendingReqs.length > 0) {
+        this.socket.emit('requests_list', pendingReqs);
+      }
 
       // Broadcast user_joined (toast + list). A reconnect inside the grace window
       // (page refresh) is not a new join, so the room is only sent the fresh sync_state.
@@ -271,6 +245,8 @@ export class MessageHandler {
           syncState,
           role: participant.role,
           sessionToken: token,
+          requests: pendingReqs,
+          chatHistory,
         });
       }
     } catch (err: any) {
@@ -296,6 +272,15 @@ export class MessageHandler {
         const participant = room.getParticipant(userId);
         // Verify socket owns this participant
         if (participant && participant.socketId === this.socket.id) {
+          const hadRequests = room.clearUserPendingRequests(userId);
+          if (hadRequests) {
+            for (const [, p] of room.participants) {
+              if ((p.role === 'host' || p.role === 'moderator') && p.socketId) {
+                this.io.to(p.socketId).emit('requests_list', room.getPendingRequestsArray());
+              }
+            }
+          }
+
           const leftParticipant = room.handleExplicitLeave(userId, this.io);
           this.socket.leave(room.roomCode);
           this.socket.data.roomCode = undefined;
@@ -620,6 +605,11 @@ export class MessageHandler {
         participants: room.getParticipantsData(true),
       });
 
+      // Send pending requests to newly appointed moderator
+      if (newRole === 'moderator' && targetParticipant.socketId) {
+        this.io.to(targetParticipant.socketId).emit('requests_list', room.getPendingRequestsArray());
+      }
+
       room.broadcastSyncState(this.io);
       if (typeof callback === 'function') callback({ success: true, role: newRole });
     } catch (err: any) {
@@ -631,12 +621,13 @@ export class MessageHandler {
   // ─── 8B. TRANSFER HOST (Host only) ─────────────────────────────────────────
   private handleTransferHost(data: any, callback?: (res: any) => void): void {
     try {
-      const roomCode = cleanRoomCode(this.socket.data.roomCode || data?.roomCode || data?.roomId);
-      const hostUserId = this.socket.data.userId || data?.hostId || data?.myUserId;
+      // P0: Strictly read authenticated roomCode and userId from socket.data
+      const roomCode = this.socket.data.roomCode;
+      const hostUserId = this.socket.data.userId;
       const targetUserId = sanitize(data?.userId || data?.targetUserId, 50);
 
       if (!roomCode || !hostUserId || !targetUserId) {
-        if (typeof callback === 'function') callback({ success: false, error: 'Missing parameters' });
+        if (typeof callback === 'function') callback({ success: false, error: 'Unauthorized: Not active in room' });
         return;
       }
 
@@ -678,6 +669,11 @@ export class MessageHandler {
       updateParticipantRoleInDb(roomCode, targetUserId, 'host');
       syncRoomToDb({ roomCode, hostId: targetUserId });
 
+      // Send pending requests to new host
+      if (targetParticipant.socketId) {
+        this.io.to(targetParticipant.socketId).emit('requests_list', room.getPendingRequestsArray());
+      }
+
       room.broadcast(this.io, 'role_assigned', {
         userId: targetUserId,
         username: targetParticipant.username,
@@ -697,12 +693,13 @@ export class MessageHandler {
   // ─── 9. REMOVE PARTICIPANT (Host only) ─────────────────────────────────────
   private handleRemoveParticipant(data: any, callback?: (res: any) => void): void {
     try {
-      const roomCode = cleanRoomCode(this.socket.data.roomCode || data?.roomCode || data?.roomId);
-      const hostUserId = this.socket.data.userId || data?.hostId || data?.myUserId;
+      // P0: Strictly read authenticated roomCode and userId from socket.data
+      const roomCode = this.socket.data.roomCode;
+      const hostUserId = this.socket.data.userId;
       const targetUserId = sanitize(data?.userId || data?.targetUserId, 50);
 
       if (!roomCode || !hostUserId || !targetUserId) {
-        if (typeof callback === 'function') callback({ success: false, error: 'Missing parameters' });
+        if (typeof callback === 'function') callback({ success: false, error: 'Unauthorized: Not active in room' });
         return;
       }
 
@@ -728,6 +725,16 @@ export class MessageHandler {
 
       // Ban target user from rejoining immediately
       room.banUser(targetUserId);
+
+      // Clear any pending requests from the removed user
+      const hadRequests = room.clearUserPendingRequests(targetUserId);
+      if (hadRequests) {
+        for (const [, p] of room.participants) {
+          if ((p.role === 'host' || p.role === 'moderator') && p.socketId) {
+            this.io.to(p.socketId).emit('requests_list', room.getPendingRequestsArray());
+          }
+        }
+      }
 
       const targetParticipant = room.getParticipant(targetUserId);
       room.deleteParticipant(targetUserId);
@@ -798,8 +805,31 @@ export class MessageHandler {
         targetValue = validId;
       }
 
+      // Cap: Maximum 3 active pending requests per user to prevent spam
+      const userPending = room.getPendingRequestsArray().filter((r) => r.userId === userId);
+      if (userPending.length >= 3) {
+        if (typeof callback === 'function') {
+          callback({
+            success: false,
+            error: 'Maximum 3 pending requests allowed. Please wait for host to resolve your current requests.',
+          });
+        }
+        return;
+      }
+
+      // Dedupe: Reject identical duplicate requests
+      const isDuplicate = userPending.some(
+        (r) => r.action === action && String(r.targetValue) === String(targetValue)
+      );
+      if (isDuplicate) {
+        if (typeof callback === 'function') {
+          callback({ success: false, error: 'Identical request already pending in queue' });
+        }
+        return;
+      }
+
       const requestItem = {
-        id: 'req_' + Math.random().toString(36).substring(2, 9),
+        id: 'req_' + crypto.randomUUID(),
         userId,
         username: participant.username, // strictly from verified server state
         action,
@@ -940,13 +970,14 @@ export class MessageHandler {
       }
 
       const chatItem = {
-        id: Math.random().toString(36).substring(2, 9),
+        id: 'msg_' + crypto.randomUUID(),
         userId,
         username: participant.username, // strictly from server state
         message,
         timestamp: Date.now(),
       };
 
+      room.addChatMessage(chatItem);
       room.broadcast(this.io, 'chat_received', chatItem);
       saveMessageToDb({ roomCode, userId, username: participant.username, message });
 
@@ -964,7 +995,9 @@ export class MessageHandler {
       const userId = this.socket.data.userId;
       const emoji = sanitize(data?.emoji, 10);
 
-      if (!roomCode || !userId || !emoji) return;
+      // Whitelist five allowed reaction emojis
+      const ALLOWED_EMOJIS = new Set(['👍', '😂', '😮', '❤️', '🔥']);
+      if (!roomCode || !userId || !emoji || !ALLOWED_EMOJIS.has(emoji)) return;
 
       const room = this.roomManager.getRoom(roomCode);
       if (!room) return;
@@ -973,7 +1006,7 @@ export class MessageHandler {
       if (!participant || !participant.isOnline) return;
 
       room.broadcast(this.io, 'reaction_received', {
-        id: Math.random().toString(36).substring(2, 9),
+        id: crypto.randomUUID(),
         userId,
         username: participant.username,
         emoji,
@@ -1031,9 +1064,20 @@ export class MessageHandler {
               updateParticipantRoleInDb(roomCode, newHost.userId, 'host');
               updateParticipantRoleInDb(roomCode, oldHost.userId, 'participant');
               syncRoomToDb({ roomCode, hostId: newHost.userId });
+              if (newHost.socketId) {
+                this.io.to(newHost.socketId).emit('requests_list', room.getPendingRequestsArray());
+              }
             },
             onPurged: (gone) => {
               deleteParticipantFromDb(roomCode, gone.userId);
+              const hadRequests = room.clearUserPendingRequests(gone.userId);
+              if (hadRequests) {
+                for (const [, p] of room.participants) {
+                  if ((p.role === 'host' || p.role === 'moderator') && p.socketId) {
+                    this.io.to(p.socketId).emit('requests_list', room.getPendingRequestsArray());
+                  }
+                }
+              }
               room.broadcast(this.io, 'user_left', {
                 username: gone.username,
                 userId: gone.userId,

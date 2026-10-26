@@ -204,7 +204,8 @@ function RoomContent() {
   const [showLockOverlay, setShowLockOverlay] = useState(false);
   const lockOverlayTimerRef = useRef<NodeJS.Timeout | null>(null);
   const lockOverlayOpenedAtRef = useRef<number>(0);
-  const isLocalActionRef = useRef<boolean>(false);
+  const isProgrammaticActionRef = useRef<boolean>(false);
+  const lastSyncReceivedAtRef = useRef<number>(Date.now());
 
   useEffect(() => {
     return () => {
@@ -222,11 +223,12 @@ function RoomContent() {
   const roomCodeRef = useRef<string>(roomCode);
   const myUserIdRef = useRef<string>(myUserId);
 
+  // Clock skew immune time estimation: uses client local elapsed time since packet receipt
   const getEstimatedTime = useCallback((playback?: PlaybackState | null): number => {
     if (!playback) return 0;
     if (!playback.isPlaying) return playback.currentTime || 0;
     const rate = playback.playbackRate || 1.0;
-    const elapsed = Math.max(0, (Date.now() - playback.updatedAt) / 1000) * rate;
+    const elapsed = Math.max(0, (Date.now() - lastSyncReceivedAtRef.current) / 1000) * rate;
     return Math.round((playback.currentTime + elapsed) * 100) / 100;
   }, []);
 
@@ -305,6 +307,7 @@ function RoomContent() {
     if (!myUserId || !roomCode || !username) return;
 
     const s = io(SERVER_URL, {
+      transports: ['websocket'],
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,
     });
@@ -346,20 +349,33 @@ function RoomContent() {
     });
 
     s.on('room_joined', (data: any) => {
+      lastSyncReceivedAtRef.current = Date.now();
       if (data?.sessionToken) {
         setStoredSessionToken(roomCode, data.sessionToken);
       }
-      setSyncState(data.syncState);
+      if (data?.syncState) {
+        setSyncState(data.syncState);
+      }
+      if (data?.requests && Array.isArray(data.requests)) {
+        setRequests(data.requests);
+      }
+      if (data?.chatHistory && Array.isArray(data.chatHistory)) {
+        setChatMessages(data.chatHistory);
+      }
     });
 
     s.on('room_created', (data: any) => {
+      lastSyncReceivedAtRef.current = Date.now();
       if (data?.sessionToken) {
         setStoredSessionToken(roomCode, data.sessionToken);
       }
-      setSyncState(data.syncState);
+      if (data?.syncState) {
+        setSyncState(data.syncState);
+      }
     });
 
     s.on('sync_state', (state: RoomSyncState) => {
+      lastSyncReceivedAtRef.current = Date.now();
       setSyncState(state);
       if (state.playback?.playbackRate && playerRef.current?.setPlaybackRate) {
         try {
@@ -368,16 +384,24 @@ function RoomContent() {
       }
     });
 
+    s.on('requests_list', (list: ActionRequest[]) => {
+      if (Array.isArray(list)) {
+        setRequests(list);
+      }
+    });
+
     s.on('time_update', (data: { time: number; isPlaying: boolean }) => {
-      if (isHost || !playerRef.current) return;
+      // Controllers (host and moderator) never get pulled by time_update; use fresh ref values
+      if (isHostRef.current || myRoleRef.current === 'moderator' || !playerRef.current) return;
       try {
         const cur = playerRef.current.getCurrentTime ? playerRef.current.getCurrentTime() : 0;
         if (Math.abs(cur - data.time) > 1.5) {
           playerRef.current.seekTo(data.time, true);
         }
-        if (data.isPlaying && playerRef.current.getPlayerState?.() !== 1) {
+        const pState = playerRef.current.getPlayerState?.();
+        if (data.isPlaying && pState !== 1 && pState !== 3) {
           playerRef.current.playVideo();
-        } else if (!data.isPlaying && playerRef.current.getPlayerState?.() === 1) {
+        } else if (!data.isPlaying && (pState === 1 || pState === 3)) {
           playerRef.current.pauseVideo();
         }
       } catch {}
@@ -475,6 +499,8 @@ function RoomContent() {
       s.off('user_left');
       s.off('role_assigned');
       s.off('participant_removed');
+      s.off('requests_list');
+      s.off('time_update');
       s.off('reaction_received');
       s.off('chat_received');
       s.off('request_added');
@@ -545,6 +571,23 @@ function RoomContent() {
     }, 2800);
   };
 
+  // Block keyboard shortcuts from controlling YouTube playback for non-controllers
+  useEffect(() => {
+    if (!isParticipant) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (['Space', ' ', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'k', 'j', 'l'].includes(e.key)) {
+        const activeEl = document.activeElement;
+        const isInputField = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA');
+        if (!isInputField) {
+          e.preventDefault();
+          handleParticipantVideoClick();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isParticipant, showLockOverlay]);
+
   const handleRequestPlayPause = () => {
     if (!socket) return;
     const nextAction = isPlaying ? 'pause' : 'play';
@@ -595,7 +638,7 @@ function RoomContent() {
 
   // Trigger floating reaction emoji
   const triggerFloatingEmoji = (emoji: string) => {
-    const id = Math.random().toString();
+    const id = typeof window !== 'undefined' && window.crypto?.randomUUID ? window.crypto.randomUUID() : Math.random().toString();
     const x = Math.floor(Math.random() * 70) + 15; // 15% to 85%
     setFloatingEmojis((prev) => [...prev, { id, emoji, x }]);
     setTimeout(() => {
@@ -633,7 +676,7 @@ function RoomContent() {
           controls: 1,
           modestbranding: 1,
           rel: 0,
-          disablekb: 0,
+          disablekb: isParticipant ? 1 : 0,
           enablejsapi: 1,
         },
         events: {
@@ -686,7 +729,10 @@ function RoomContent() {
               setIsPlaying(false);
             }
 
-            if (isLocalActionRef.current) return;
+            if (isProgrammaticActionRef.current) {
+              isProgrammaticActionRef.current = false;
+              return;
+            }
 
             // When HOST or MODERATOR directly plays or pauses via video clicks or keyboard shortcuts
             if ((isHostRef.current || myRoleRef.current === 'moderator') && socketRef.current && roomCodeRef.current) {
@@ -787,11 +833,10 @@ function RoomContent() {
 
     const expectedTime = getEstimatedTime(syncState.playback);
 
-    isLocalActionRef.current = true;
-
     try {
       const currentUrl = player.getVideoUrl ? player.getVideoUrl() : '';
       if (!currentUrl.includes(videoId)) {
+        isProgrammaticActionRef.current = true;
         player.loadVideoById({
           videoId,
           startSeconds: expectedTime || 0,
@@ -799,6 +844,7 @@ function RoomContent() {
       } else {
         const clientTime = player.getCurrentTime ? player.getCurrentTime() : 0;
         if (Math.abs(clientTime - expectedTime) > 1.2) {
+          isProgrammaticActionRef.current = true;
           player.seekTo(expectedTime, true);
         }
       }
@@ -806,21 +852,17 @@ function RoomContent() {
       const pState = player.getPlayerState ? player.getPlayerState() : -1;
       if (serverPlaying) {
         if (pState !== 1 && pState !== 3) {
-          try {
-            player.playVideo();
-          } catch {}
+          isProgrammaticActionRef.current = true;
+          player.playVideo();
         }
       } else {
         if (pState === 1 || pState === 3) {
+          isProgrammaticActionRef.current = true;
           player.pauseVideo();
         }
       }
     } catch (err) {
       console.warn('[Sync playback error]', err);
-    } finally {
-      setTimeout(() => {
-        isLocalActionRef.current = false;
-      }, 500);
     }
   }, [
     syncState?.playback?.videoId,
@@ -866,9 +908,9 @@ function RoomContent() {
     return () => clearInterval(interval);
   }, [playerReady, isHost, myRole, syncState?.playback?.videoId, getEstimatedTime]);
 
-  // Host and Moderator send periodic time sync updates while video is playing
+  // Only Host sends periodic time sync updates while video is playing
   useEffect(() => {
-    if ((!isHost && myRole !== 'moderator') || !isPlaying || !socket || !roomCode) return;
+    if (!isHost || !isPlaying || !socket || !roomCode) return;
     const interval = setInterval(() => {
       if (playerRef.current && typeof playerRef.current.getCurrentTime === 'function') {
         const cur = playerRef.current.getCurrentTime();
@@ -1953,10 +1995,13 @@ export default function RoomPage() {
   return (
     <React.Suspense
       fallback={
-        <div className="h-[100dvh] w-full flex items-center justify-center bg-[#F7EAD0]">
-          <div className="flex flex-col items-center gap-3">
+        <div
+          className="w-full h-[100dvh] flex flex-col items-center justify-center p-4 selection:bg-red-500 selection:text-white"
+          style={{ backgroundColor: '#F7EAD0' }}
+        >
+          <div className="flex flex-col items-center gap-4">
             <span
-              className="text-[#E62719] text-4xl sm:text-5xl tracking-normal animate-pulse select-none"
+              className="text-[#E62719] text-5xl font-modak tracking-normal select-none"
               style={{
                 fontFamily: "'Modak', cursive",
                 WebkitTextStroke: '6px white',
@@ -1965,7 +2010,12 @@ export default function RoomPage() {
             >
               WATCHPARTY
             </span>
-            <div className="w-6 h-6 border-3 border-[#E62719] border-t-transparent rounded-full animate-spin"></div>
+            <div className="flex items-center gap-2.5 bg-white border border-[#18181B] rounded-full px-5 py-2 shadow-sm">
+              <div className="w-4 h-4 border-2 border-[#E62719] border-t-transparent rounded-full animate-spin"></div>
+              <span className="font-mouse font-bold text-xl text-[#1A1614] tracking-wide">
+                Connecting to room...
+              </span>
+            </div>
           </div>
         </div>
       }

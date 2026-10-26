@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { Server } from 'socket.io';
 import { Participant } from './Participant';
 import { PlaybackState, Role, RoomSyncState } from '../types';
@@ -9,6 +10,14 @@ export interface ActionRequestItem {
   action: 'pause' | 'play' | 'seek' | 'change_video';
   description: string;
   targetValue?: any;
+  timestamp: number;
+}
+
+export interface ChatMessageItem {
+  id: string;
+  userId: string;
+  username: string;
+  message: string;
   timestamp: number;
 }
 
@@ -34,6 +43,9 @@ export class Room {
 
   // Pending participant action requests
   public pendingRequests: Map<string, ActionRequestItem> = new Map();
+
+  // Recent chat history for late joiners (max 50 messages)
+  public chatHistory: ChatMessageItem[] = [];
 
   constructor(roomCode: string, hostUserId: string, hostUsername: string, hostSocketId: string) {
     this.roomCode = roomCode;
@@ -87,7 +99,7 @@ export class Room {
   createOrGetSessionToken(userId: string): string {
     let token = this.sessionTokens.get(userId);
     if (!token) {
-      token = 'tok_' + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
+      token = 'tok_' + crypto.randomUUID();
       this.sessionTokens.set(userId, token);
     }
     return token;
@@ -394,5 +406,28 @@ export class Room {
 
   getPendingRequestsArray(): ActionRequestItem[] {
     return Array.from(this.pendingRequests.values());
+  }
+
+  clearUserPendingRequests(userId: string): boolean {
+    let removed = false;
+    for (const [id, req] of this.pendingRequests.entries()) {
+      if (req.userId === userId) {
+        this.pendingRequests.delete(id);
+        removed = true;
+      }
+    }
+    return removed;
+  }
+
+  // Chat History Management (Max 50 messages)
+  addChatMessage(msg: ChatMessageItem): void {
+    this.chatHistory.push(msg);
+    if (this.chatHistory.length > 50) {
+      this.chatHistory.shift();
+    }
+  }
+
+  getChatHistory(): ChatMessageItem[] {
+    return [...this.chatHistory];
   }
 }
