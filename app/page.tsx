@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
 import { useRouter } from 'next/navigation';
+import { setStoredUsername } from '../lib/session';
 
 // ─── Hand-drawn Doodle SVGs matching reference image exactly ───────────────
 
@@ -203,22 +204,6 @@ export default function LandingPage() {
   const nameInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Pre-seed demo rooms in localStorage for immediate testing
-    try {
-      const existing = localStorage.getItem('wp_rooms');
-      if (!existing) {
-        localStorage.setItem(
-          'wp_rooms',
-          JSON.stringify({
-            PARTY1: { host: 'Alex', createdAt: Date.now() },
-            WATCH1: { host: 'Sam', createdAt: Date.now() },
-          })
-        );
-      }
-    } catch {
-      // ignore
-    }
-
     // 1. Fade out the loader
     const loaderTimer = setTimeout(() => setIsLoading(false), 600);
     // 2. Nav drops FIRST
@@ -309,7 +294,7 @@ export default function LandingPage() {
     setTimeout(() => setToast(null), 3000);
   };
 
-  const handleCreate = (e: React.FormEvent) => {
+  const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!createName.trim()) {
       setCreateError('Please enter your name');
@@ -318,25 +303,28 @@ export default function LandingPage() {
     setCreateError(null);
     setIsCreating(true);
 
-    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-
     try {
-      const rooms = JSON.parse(localStorage.getItem('wp_rooms') || '{}');
-      rooms[code] = { host: createName.trim(), createdAt: Date.now() };
-      localStorage.setItem('wp_rooms', JSON.stringify(rooms));
-    } catch {
-      // ignore
-    }
+      const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000';
+      const res = await fetch(`${serverUrl}/api/rooms`, { method: 'POST' });
+      const data = await res.json();
+      const code = data.roomCode || Math.random().toString(36).substring(2, 8).toUpperCase();
 
-    showToast(`🎉 Creating room ${code}...`);
-    setTimeout(() => {
+      showToast(`🎉 Creating room ${code}...`);
+      setStoredUsername(createName.trim());
       setIsCreating(false);
       setIsCreateModalOpen(false);
-      router.push(`/room/${code}?username=${encodeURIComponent(createName.trim())}`);
-    }, 600);
+      router.push(`/room/${code}?create=true`);
+    } catch {
+      const fallbackCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      showToast(`🎉 Creating room ${fallbackCode}...`);
+      setStoredUsername(createName.trim());
+      setIsCreating(false);
+      setIsCreateModalOpen(false);
+      router.push(`/room/${fallbackCode}?create=true`);
+    }
   };
 
-  const handleJoin = (e: React.FormEvent) => {
+  const handleJoin = async (e: React.FormEvent) => {
     e.preventDefault();
     let hasError = false;
 
@@ -347,8 +335,8 @@ export default function LandingPage() {
     if (!joinCode.trim()) {
       setJoinCodeError('Please enter a room code');
       hasError = true;
-    } else if (joinCode.trim().length < 6) {
-      setJoinCodeError('Room code must be 6 characters');
+    } else if (joinCode.trim().length < 4) {
+      setJoinCodeError('Please enter a valid room code');
       hasError = true;
     }
 
@@ -360,29 +348,28 @@ export default function LandingPage() {
 
     const code = joinCode.trim().toUpperCase();
 
-    setTimeout(() => {
-      let roomFound = false;
-      try {
-        const rooms = JSON.parse(localStorage.getItem('wp_rooms') || '{}');
-        if (rooms[code] || ['PARTY1', 'WATCH1', 'DEMO01'].includes(code)) {
-          roomFound = true;
-        }
-      } catch {
-        // fallback
-      }
+    try {
+      const serverUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000';
+      const res = await fetch(`${serverUrl}/api/rooms/${code}`);
+      const data = await res.json();
 
-      if (!roomFound) {
+      if (!res.ok || !data.exists) {
         setIsJoining(false);
-        setJoinCodeError('Room not found. Check code or create a room.');
+        setJoinCodeError('Room not found. Check the code.');
+        showToast('❌ Room not found');
         return;
       }
 
       showToast(`🍿 Joining room ${code}...`);
-      setTimeout(() => {
-        setIsJoining(false);
-        router.push(`/room/${code}?username=${encodeURIComponent(joinName.trim())}`);
-      }, 500);
-    }, 600);
+      setStoredUsername(joinName.trim());
+      setIsJoining(false);
+      router.push(`/room/${code}`);
+    } catch {
+      showToast(`🍿 Joining room ${code}...`);
+      setStoredUsername(joinName.trim());
+      setIsJoining(false);
+      router.push(`/room/${code}`);
+    }
   };
 
   return (

@@ -1,0 +1,101 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  host
+  moderator
+  participant
+}
+
+enum RoomStatus {
+  active
+  paused
+  ended
+}
+
+model Room {
+  id              String        @id @default(uuid())
+  roomCode        String        @unique @map("room_code")
+  hostId          String        @map("host_id")
+  title           String?       @default("YouTube Watch Party")
+  videoId         String?       @map("video_id")
+  currentTime     Float         @default(0) @map("current_time")
+  isPlaying       Boolean       @default(false) @map("is_playing")
+  playbackRate    Float         @default(1.0) @map("playback_rate")
+  status          RoomStatus    @default(active)
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  metadata        RoomMetadata?
+  participants    Participant[]
+  sessions        UserSession[]
+  messages        Message[]
+
+  @@map("rooms")
+}
+
+model RoomMetadata {
+  id                    String   @id @default(uuid())
+  roomCode              String   @unique @map("room_code")
+  room                  Room     @relation(fields: [roomCode], references: [roomCode], onDelete: Cascade)
+  maxParticipants       Int      @default(50) @map("max_participants")
+  peakParticipantCount  Int      @default(1) @map("peak_participant_count")
+  totalJoins            Int      @default(1) @map("total_joins")
+  requiresApproval      Boolean  @default(true) @map("requires_approval")
+  allowChat             Boolean  @default(true) @map("allow_chat")
+  allowReactions        Boolean  @default(true) @map("allow_reactions")
+  customSettings        Json?    @map("custom_settings")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@map("room_metadata")
+}
+
+model UserSession {
+  id          String    @id @default(uuid())
+  userId      String    @map("user_id")
+  username    String
+  roomCode    String    @map("room_code")
+  room        Room      @relation(fields: [roomCode], references: [roomCode], onDelete: Cascade)
+  socketId    String?   @map("socket_id")
+  role        Role      @default(participant)
+  isOnline    Boolean   @default(true) @map("is_online")
+  connectedAt DateTime  @default(now()) @map("connected_at")
+  lastSeenAt  DateTime  @default(now()) @map("last_seen_at")
+  leftAt      DateTime? @map("left_at")
+  userAgent   String?   @map("user_agent")
+
+  @@index([roomCode, userId])
+  @@map("user_sessions")
+}
+
+model Participant {
+  id        String   @id @default(uuid())
+  roomCode  String   @map("room_code")
+  userId    String   @map("user_id")
+  username  String
+  role      Role     @default(participant)
+  isOnline  Boolean  @default(true) @map("is_online")
+  joinedAt  DateTime @default(now()) @map("joined_at")
+  room      Room     @relation(fields: [roomCode], references: [roomCode], onDelete: Cascade)
+
+  @@unique([roomCode, userId])
+  @@map("participants")
+}
+
+model Message {
+  id        String   @id @default(uuid())
+  roomCode  String   @map("room_code")
+  userId    String   @map("user_id")
+  username  String
+  message   String
+  createdAt DateTime @default(now()) @map("created_at")
+  room      Room     @relation(fields: [roomCode], references: [roomCode], onDelete: Cascade)
+
+  @@map("messages")
+}

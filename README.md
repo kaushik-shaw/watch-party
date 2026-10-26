@@ -42,10 +42,16 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-## Project Status
+## Architecture & Lifecycle Notes
 
-Currently under development as part of an internship assignment.
+- **In-Memory Room State**: Active room sessions, WebSockets, pending requests, and synchronization timers live in server memory for ultra-low latency real-time communication.
+  - *Server Restarts*: Active in-memory room states and pending request queues are ephemeral and will reset if the server restarts.
+  - *Database Persistence*: Rooms, user sessions, participants, and chat logs are backed asynchronously by Prisma ORM and PostgreSQL.
+- **Session Hijack Prevention**: Rejoining an existing participant session requires a secret, server-issued session token (`sessionToken`) issued upon room join/creation. Sockets without a valid token cannot take over existing participants or hosts.
+- **Host Disconnect Grace Period**: When a host disconnects or refreshes, the server holds a 15-second grace period before re-electing a new host. Upon re-election, the former host is cleanly demoted to participant so multiple hosts can never exist simultaneously.
+- **Room API Security**: `GET /api/rooms/:code` returns only public sanity metadata (`{ exists, roomCode, activeCount }`) without leaking internal `hostId` or participant lists.
+- **YouTube Support**: Supports standard video URLs, `youtu.be` links, `/shorts/`, and `/live/` streams.
 
 ## License
 
-No license has been specified yet.
+MIT License

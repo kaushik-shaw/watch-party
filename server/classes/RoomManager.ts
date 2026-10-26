@@ -1,5 +1,6 @@
 import { Room } from './Room';
 import { Participant } from './Participant';
+import { Role } from '../types';
 
 export class RoomManager {
   private rooms: Map<string, Room> = new Map();
@@ -31,6 +32,13 @@ export class RoomManager {
     customCode?: string
   ): Room {
     const code = customCode ? customCode.trim().toUpperCase() : this.generateCode();
+    const existing = this.rooms.get(code);
+    if (existing) {
+      // If room already exists, preserve original host; newcomers become participants
+      const role: Role = existing.hostId === hostUserId ? 'host' : 'participant';
+      existing.addOrUpdateParticipant(hostUserId, hostUsername, hostSocketId, role);
+      return existing;
+    }
     const room = new Room(code, hostUserId, hostUsername, hostSocketId);
     this.rooms.set(code, room);
     return room;

@@ -1,20 +1,30 @@
-import { Role, VideoAction } from './types';
+import { Role, RoomAction } from './types';
 
 /**
  * Role -> Allowed Events Matrix
- * Host & Moderator can control playback and change video.
- * Participant cannot change video or control playback.
+ * Host has full control including role management and kicks.
+ * Moderator can control playback, change video, and resolve requests.
+ * Participant cannot perform privileged actions directly.
  */
-export const ROLE_PERMISSIONS: Record<Role, readonly VideoAction[]> = {
-  host: ['play', 'pause', 'seek', 'change_video'],
-  moderator: ['play', 'pause', 'seek', 'change_video'],
+export const ROLE_PERMISSIONS: Record<Role, readonly RoomAction[]> = {
+  host: [
+    'play',
+    'pause',
+    'seek',
+    'change_video',
+    'assign_role',
+    'remove_participant',
+    'transfer_host',
+    'resolve_request',
+  ],
+  moderator: ['play', 'pause', 'seek', 'change_video', 'resolve_request'],
   participant: [],
 } as const;
 
 /**
  * Checks whether a role is authorized to perform a given action.
  */
-export function canPerform(role: Role, action: VideoAction): boolean {
+export function canPerform(role: Role, action: RoomAction): boolean {
   const allowed = ROLE_PERMISSIONS[role];
   return Array.isArray(allowed) && allowed.includes(action);
 }
